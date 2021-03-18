@@ -2,7 +2,7 @@ import torch
 from torch import nn as nn
 
 # from mmdet3d.ops.knn import knn
-from .attention_block_depre import PointAttentionBlock
+from .attention_block import PointAttentionBlock
 from .mlp import MLP
 
 
