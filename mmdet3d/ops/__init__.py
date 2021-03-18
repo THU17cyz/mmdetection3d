@@ -7,7 +7,7 @@ from .furthest_point_sample import (Points_Sampler, furthest_point_sample,
                                     furthest_point_sample_with_dist)
 from .gather_points import gather_points
 from .group_points import (GroupAll, QueryAndGroup, group_points,
-                           grouping_operation)
+                           grouping_operation, KNNAndGroup)
 from .interpolate import three_interpolate, three_nn
 from .knn import knn
 from .norm import NaiveSyncBatchNorm1d, NaiveSyncBatchNorm2d
@@ -18,6 +18,7 @@ from .roiaware_pool3d import (RoIAwarePool3d, points_in_boxes_batch,
 from .sparse_block import (SparseBasicBlock, SparseBottleneck,
                            make_sparse_convmodule)
 from .voxel import DynamicScatter, Voxelization, dynamic_scatter, voxelization
+from .egnn import EGNNLayer, PointEGNNModuleMSG, PointEGNNModule
 
 __all__ = [
     'nms', 'soft_nms', 'RoIAlign', 'roi_align', 'get_compiler_version',
@@ -29,7 +30,8 @@ __all__ = [
     'make_sparse_convmodule', 'ball_query', 'knn', 'furthest_point_sample',
     'furthest_point_sample_with_dist', 'three_interpolate', 'three_nn',
     'gather_points', 'grouping_operation', 'group_points', 'GroupAll',
-    'QueryAndGroup', 'PointSAModule', 'PointSAModuleMSG', 'PointFPModule',
+    'QueryAndGroup','KNNAndGroup', 'PointSAModule', 'PointSAModuleMSG', 'PointFPModule',
     'points_in_boxes_batch', 'get_compiler_version',
-    'get_compiling_cuda_version', 'Points_Sampler', 'build_sa_module'
+    'get_compiling_cuda_version', 'Points_Sampler', 'build_sa_module', 'PointEGNNModule',
+    'PointEGNNModuleMSG'
 ]

@@ -4,6 +4,7 @@ from torch.autograd import Function
 from typing import Tuple
 
 from ..ball_query import ball_query
+from ..knn import knn
 from . import group_points_ext
 
 
@@ -36,8 +37,10 @@ class QueryAndGroup(nn.Module):
                  use_xyz=True,
                  return_grouped_xyz=False,
                  normalize_xyz=False,
+                 subtract_center=True,
                  uniform_sample=False,
-                 return_unique_cnt=False):
+                 return_unique_cnt=False,
+                 return_mask=False):
         super(QueryAndGroup, self).__init__()
         self.max_radius = max_radius
         self.min_radius = min_radius
@@ -45,10 +48,12 @@ class QueryAndGroup(nn.Module):
         self.use_xyz = use_xyz
         self.return_grouped_xyz = return_grouped_xyz
         self.normalize_xyz = normalize_xyz
+        self.subtract_center = subtract_center
         self.uniform_sample = uniform_sample
         self.return_unique_cnt = return_unique_cnt
         if self.return_unique_cnt:
             assert self.uniform_sample
+        self.return_mask = return_mask
 
     def forward(self, points_xyz, center_xyz, features=None):
         """forward.
@@ -77,11 +82,18 @@ class QueryAndGroup(nn.Module):
                         dtype=torch.long)
                     all_ind = torch.cat((unique_ind, unique_ind[sample_ind]))
                     idx[i_batch, i_region, :] = all_ind
+        elif self.return_mask:
+            idx_first = idx[:, :, 0:1].repeat(1, 1, idx.shape[-1])
+            mask = torch.ones_like(idx)
+            mask[idx == idx_first] = 0
+            mask[:, :, 0:1] = 1
+
 
         xyz_trans = points_xyz.transpose(1, 2).contiguous()
         # (B, 3, npoint, sample_num)
         grouped_xyz = grouping_operation(xyz_trans, idx)
-        grouped_xyz -= center_xyz.transpose(1, 2).unsqueeze(-1)
+        if self.subtract_center:
+            grouped_xyz -= center_xyz.transpose(1, 2).unsqueeze(-1)
         if self.normalize_xyz:
             grouped_xyz /= self.max_radius
 
@@ -103,6 +115,88 @@ class QueryAndGroup(nn.Module):
             ret.append(grouped_xyz)
         if self.return_unique_cnt:
             ret.append(unique_cnt)
+        if self.return_mask:
+            ret.append(mask)
+        if len(ret) == 1:
+            return ret[0]
+        else:
+            return tuple(ret)
+
+
+class KNNAndGroup(nn.Module):
+    """Query and Group.
+
+    Groups with a ball query of radius
+
+    Args:
+        max_radius (float): The maximum radius of the balls.
+        sample_num (int): Maximum number of features to gather in the ball.
+        min_radius (float): The minimum radius of the balls.
+        use_xyz (bool): Whether to use xyz.
+            Default: True.
+        return_grouped_xyz (bool): Whether to return grouped xyz.
+            Default: False.
+        normalize_xyz (bool): Whether to normalize xyz.
+            Default: False.
+        uniform_sample (bool): Whether to sample uniformly.
+            Default: False
+        return_unique_cnt (bool): Whether to return the count of
+            unique samples.
+            Default: False.
+    """
+
+    def __init__(self,
+                 k,
+                 use_xyz=True,
+                 return_grouped_xyz=False,
+                 normalize_xyz=False,
+                 subtract_center=True):
+        super(KNNAndGroup, self).__init__()
+        self.k = k
+        self.use_xyz = use_xyz
+        self.return_grouped_xyz = return_grouped_xyz
+        self.normalize_xyz = normalize_xyz
+        self.subtract_center = subtract_center
+
+    def forward(self, points_xyz, center_xyz, features=None):
+        """forward.
+
+        Args:
+            points_xyz (Tensor): (B, N, 3) xyz coordinates of the features.
+            center_xyz (Tensor): (B, npoint, 3) Centriods.
+            features (Tensor): (B, C, N) Descriptors of the features.
+
+        Return：
+            Tensor: (B, 3 + C, npoint, sample_num) Grouped feature.
+        """
+        xyz_trans = points_xyz.transpose(1, 2).contiguous()
+        center_xyz_trans = center_xyz.transpose(1, 2).contiguous()
+        idx = knn(self.k, xyz_trans, center_xyz_trans, transposed=True)  # B, k, npoint
+        idx = idx.transpose(1, 2).contiguous()
+
+        # (B, 3, npoint, sample_num)
+        grouped_xyz = grouping_operation(xyz_trans, idx)
+        if self.subtract_center:
+            grouped_xyz -= center_xyz_trans.unsqueeze(-1)
+        if self.normalize_xyz:
+            grouped_xyz /= self.max_radius
+
+        if features is not None:
+            grouped_features = grouping_operation(features, idx)
+            if self.use_xyz:
+                # (B, C + 3, npoint, sample_num)
+                new_features = torch.cat([grouped_xyz, grouped_features],
+                                         dim=1)
+            else:
+                new_features = grouped_features
+        else:
+            assert (self.use_xyz
+                    ), 'Cannot have not features and not use xyz as a feature!'
+            new_features = grouped_xyz
+
+        ret = [new_features]
+        if self.return_grouped_xyz:
+            ret.append(grouped_xyz)
         if len(ret) == 1:
             return ret[0]
         else:

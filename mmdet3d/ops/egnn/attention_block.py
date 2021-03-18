@@ -1,114 +1,58 @@
 import torch
-from einops import repeat
-from torch import einsum, nn
+from torch import nn
 
-
-def exists(val):
-    return val is not None
-
-
-def max_value(t):
-    return torch.finfo(t.dtype).max
-
-
-def batched_index_select(values, indices, dim=1):
-    value_dims = values.shape[(dim + 1):]
-    values_shape, indices_shape = map(lambda t: list(t.shape),
-                                      (values, indices))
-    indices = indices[(..., *((None, ) * len(value_dims)))]
-    indices = indices.expand(*((-1, ) * len(indices_shape)), *value_dims)
-    value_expand_len = len(indices_shape) - (dim + 1)
-    values = values[(*((slice(None), ) * dim), *((None, ) * value_expand_len),
-                     ...)]
-
-    value_expand_shape = [-1] * len(values.shape)
-    expand_slice = slice(dim, (dim + value_expand_len))
-    value_expand_shape[expand_slice] = indices.shape[expand_slice]
-    values = values.expand(*value_expand_shape)
-
-    dim += value_expand_len
-    return values.gather(dim, indices)
-
+from .mlp import MLP
 
 class PointAttentionBlock(nn.Module):
 
     def __init__(self,
-                 *,
-                 dim,
-                 pos_mlp_hidden_dim=64,
-                 attn_mlp_hidden_mult=4,
-                 num_neighbors=None):
+                 to_q=None,
+                 to_kv=None,
+                 pos_mlp=None,
+                 attn_mlp=None,
+                 use_pos=True):
         super().__init__()
-        self.num_neighbors = num_neighbors
 
-        self.to_qkv = nn.Linear(dim, dim * 3, bias=False)
+        self.to_q = MLP(**to_q)
 
-        self.pos_mlp = nn.Sequential(
-            nn.Linear(3, pos_mlp_hidden_dim), nn.ReLU(),
-            nn.Linear(pos_mlp_hidden_dim, dim))
+        self.to_kv = MLP(**to_kv) # bias = False?why
 
-        self.attn_mlp = nn.Sequential(
-            nn.Linear(dim, dim * attn_mlp_hidden_mult),
-            nn.ReLU(),
-            nn.Linear(dim * attn_mlp_hidden_mult, dim),
-        )
+        self.attn_mlp = MLP(**attn_mlp)
 
-    def forward(self, x, pos, mask=None, return_agg=False):
-        n, num_neighbors = x.shape[1], self.num_neighbors
+        self.use_pos = use_pos
+        if self.use_pos:
+            self.pos_mlp = MLP(**pos_mlp)
 
+    def forward(self, h_query, h_ref, rel_pos=None, mask=mask):
         # get queries, keys, values
-        q, k, v = self.to_qkv(x).chunk(3, dim=-1)
+        q = self.to_q(h_query[..., 0])
+        k, v = self.to_kv(h_ref[:, :, 0, :]).chunk(2, dim=1)
 
         # calculate relative positional embeddings
-        rel_pos = pos[:, :, None, :] - pos[:, None, :, :]
-        rel_pos_emb = self.pos_mlp(rel_pos)
+        if self.use_pos:
+            assert rel_pos is not None
+            rel_pos_emb = self.pos_mlp(rel_pos)
 
         # use subtraction of queries to keys. i suppose this is
         # a better inductive bias for point clouds than dot product
-        qk_rel = q[:, :, None, :] - k[:, None, :, :]
+        qk_rel = q[:, :, :, None] - k[:, :, None, :]
 
-        # prepare mask
-        if exists(mask):
-            mask = mask[:, :, None] * mask[:, None, :]
+        # v = v[:, None, :, :]
 
-        # expand values
-        v = repeat(v, 'b j d -> b i j d', i=n)
-
-        # determine k nearest neighbors for each point, if specified
-        if exists(num_neighbors) and num_neighbors < n:
-            rel_dist = rel_pos.norm(dim=-1)
-
-            if exists(mask):
-                mask_value = max_value(rel_dist)
-                rel_dist.masked_fill_(~mask, mask_value)
-
-            dist, indices = rel_dist.topk(num_neighbors, largest=False)
-
-            v = batched_index_select(v, indices, dim=2)
-            qk_rel = batched_index_select(qk_rel, indices, dim=2)
-            rel_pos_emb = batched_index_select(rel_pos_emb, indices, dim=2)
-            mask = batched_index_select(
-                mask, indices, dim=2) if exists(mask) else None
-
-        # add relative positional embeddings to value
-        v = v + rel_pos_emb
+        # # add relative positional embeddings to value
+        # v = v + rel_pos_emb
 
         # use attention mlp, making sure to
         # add relative positional embedding first
-        sim = self.attn_mlp(qk_rel + rel_pos_emb)
+        if self.use_pos:
+            qk_rel = qk_rel + rel_pos_emb
 
-        # masking
-        if exists(mask):
-            mask_value = -max_value(sim)
-            sim.masked_fill_(~mask[..., None], mask_value)
-
+        qk_rel = qk_rel.reshape(qk_rel.shape[0], -1, qk_rel.shape[-1])
+        sim = self.attn_mlp(qk_rel).reshape(qk_rel.shape[0], -1, q.shape[2], k.shape[2])
         # attention
-        attn = sim.softmax(dim=-2)
+        if mask is not None:
+            mask_value = torch.finfo(sim.dtype).min
+            sim.masked_fill_(~mask.unsqueeze(1).repeat(1, sim.shape[1], 1, 1), mask_value)
+        attn = sim.softmax(dim=3)
 
-        # return agg
-        if return_agg:
-            # aggregate
-            agg = einsum('b i j d, b i j d -> b i d', attn, v)
-            return attn, agg
-        else:
-            return attn
+        return attn
