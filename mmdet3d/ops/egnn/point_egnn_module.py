@@ -1,10 +1,11 @@
 import torch
-from mmcv.cnn import ConvModule
+# from mmcv.cnn import ConvModule
 from torch import nn as nn
-from torch.nn import functional as F
+# from torch.nn import functional as F
 from typing import List
 
-from mmdet3d.ops import GroupAll, Points_Sampler, QueryAndGroup, gather_points, KNNAndGroup
+from mmdet3d.ops import (KNNAndGroup, Points_Sampler, QueryAndGroup,
+                         gather_points)
 from .egnn_layer import EGNNLayer
 
 
@@ -150,13 +151,15 @@ class PointEGNNModuleMSG(nn.Module):
         xyz_flipped = points_xyz.transpose(1, 2).contiguous()
         if indices is not None:
             assert (indices.shape[1] == self.num_point[0])
-            dsamp_xyz = gather_points(xyz_flipped, indices) if self.num_point is not None else None
+            dsamp_xyz = gather_points(
+                xyz_flipped, indices) if self.num_point is not None else None
             dsamp_xyz_t = dsamp_xyz.transpose(1, 2).contiguous()
         elif target_xyz is not None:
             dsamp_xyz = target_xyz.contiguous()
         else:
             indices = self.points_sampler(points_xyz, features)
-            dsamp_xyz = gather_points(xyz_flipped, indices) if self.num_point is not None else None
+            dsamp_xyz = gather_points(
+                xyz_flipped, indices) if self.num_point is not None else None
             dsamp_xyz_t = dsamp_xyz.transpose(1, 2).contiguous()
 
         dsamp_features = gather_points(features, indices)
@@ -164,19 +167,25 @@ class PointEGNNModuleMSG(nn.Module):
         for i in range(len(self.groupers)):
             # (B, C, num_point, nsample)
             if self.group_mode == 'knn':
-                new_features, new_xyz = self.groupers[i](points_xyz, dsamp_xyz_t, features)
+                new_features, new_xyz = self.groupers[i](points_xyz,
+                                                         dsamp_xyz_t, features)
                 mask = None
             else:
-                new_features, new_xyz, mask = self.groupers[i](points_xyz, dsamp_xyz_t, features)
+                new_features, new_xyz, mask = self.groupers[i](points_xyz,
+                                                               dsamp_xyz_t,
+                                                               features)
 
             # (B, mlp[-1], num_point)
-            new_xyz_shifted, new_features = self.egnn_layers[i](dsamp_xyz, new_xyz, dsamp_features, new_features, mask=mask)
+            new_xyz_shifted, new_features = self.egnn_layers[i](
+                dsamp_xyz, new_xyz, dsamp_features, new_features, mask=mask)
 
             new_features_list.append(new_features)
 
             new_xyz_shifted_list.append(new_xyz_shifted)
 
-        return dsamp_xyz, torch.cat(new_xyz_shifted_list, dim=1), torch.cat(new_features_list, dim=1), indices
+        return dsamp_xyz, torch.cat(
+            new_xyz_shifted_list, dim=1), torch.cat(
+                new_features_list, dim=1), indices
 
 
 class PointEGNNModule(PointEGNNModuleMSG):

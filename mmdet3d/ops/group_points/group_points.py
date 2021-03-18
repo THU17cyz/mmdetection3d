@@ -88,7 +88,6 @@ class QueryAndGroup(nn.Module):
             mask[idx == idx_first] = 0
             mask[:, :, 0:1] = 1
 
-
         xyz_trans = points_xyz.transpose(1, 2).contiguous()
         # (B, 3, npoint, sample_num)
         grouped_xyz = grouping_operation(xyz_trans, idx)
@@ -171,7 +170,9 @@ class KNNAndGroup(nn.Module):
         """
         xyz_trans = points_xyz.transpose(1, 2).contiguous()
         center_xyz_trans = center_xyz.transpose(1, 2).contiguous()
-        idx = knn(self.k, xyz_trans, center_xyz_trans, transposed=True)  # B, k, npoint
+        idx = knn(
+            self.k, xyz_trans, center_xyz_trans,
+            transposed=True)  # B, k, npoint
         idx = idx.transpose(1, 2).contiguous()
 
         # (B, 3, npoint, sample_num)

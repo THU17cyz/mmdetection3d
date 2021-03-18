@@ -2,7 +2,7 @@ import torch
 from mmcv.runner import auto_fp16
 from torch import nn as nn
 
-from mmdet3d.ops import PointFPModule, build_sa_module, PointEGNNModule
+from mmdet3d.ops import PointEGNNModule  # , PointFPModule, build_sa_module
 from mmdet.models import BACKBONES
 from .base_pointnet import BasePointNet
 
@@ -36,6 +36,7 @@ class EGNNSASSG(BasePointNet):
                  num_samples=(64, 32, 16, 16),
                  sa_cfgs=None,
                  fp_channels=((256, 256), (256, 256))):
+
         super().__init__()
         self.num_sa = len(sa_cfgs)
         # self.num_fp = len(fp_channels)
@@ -63,7 +64,8 @@ class EGNNSASSG(BasePointNet):
         # fp_target_channel = skip_channel_list.pop()
         # for fp_index in range(len(fp_channels)):
         #     cur_fp_mlps = list(fp_channels[fp_index])
-        #     cur_fp_mlps = [fp_source_channel + fp_target_channel] + cur_fp_mlps
+        #     cur_fp_mlps = [fp_source_channel + fp_target_channel]
+        # + cur_fp_mlps
         #     self.FP_modules.append(PointFPModule(mlp_channels=cur_fp_mlps))
         #     if fp_index != len(fp_channels) - 1:
         #         fp_source_channel = cur_fp_mlps[-1]
@@ -99,8 +101,8 @@ class EGNNSASSG(BasePointNet):
         sa_indices = [indices]
 
         for i in range(self.num_sa):
-            cur_xyz, cur_xyz_shifted, cur_features, cur_indices = self.SA_modules[i](
-                sa_xyz_shifted[i], sa_features[i])
+            cur_xyz, cur_xyz_shifted, cur_features, cur_indices = \
+                self.SA_modules[i](sa_xyz_shifted[i], sa_features[i])
             sa_xyz.append(cur_xyz)
             sa_xyz_shifted.append(cur_xyz_shifted)
             sa_features.append(cur_features)
@@ -122,6 +124,8 @@ class EGNNSASSG(BasePointNet):
         #     fp_xyz=fp_xyz, fp_features=fp_features, fp_indices=fp_indices)
 
         ret = dict(
-            sa_xyz=sa_xyz, sa_xyz_shifted=sa_xyz_shifted, sa_features=sa_features, sa_indices=sa_indices
-        )
+            sa_xyz=sa_xyz,
+            sa_xyz_shifted=sa_xyz_shifted,
+            sa_features=sa_features,
+            sa_indices=sa_indices)
         return ret

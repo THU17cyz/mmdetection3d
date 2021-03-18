@@ -3,6 +3,7 @@ from torch import nn
 
 from .mlp import MLP
 
+
 class PointAttentionBlock(nn.Module):
 
     def __init__(self,
@@ -15,7 +16,7 @@ class PointAttentionBlock(nn.Module):
 
         self.to_q = MLP(**to_q)
 
-        self.to_kv = MLP(**to_kv) # bias = False?why
+        self.to_kv = MLP(**to_kv)  # bias = False?why
 
         self.attn_mlp = MLP(**attn_mlp)
 
@@ -23,7 +24,7 @@ class PointAttentionBlock(nn.Module):
         if self.use_pos:
             self.pos_mlp = MLP(**pos_mlp)
 
-    def forward(self, h_query, h_ref, rel_pos=None, mask=mask):
+    def forward(self, h_query, h_ref, rel_pos=None, mask=None):
         # get queries, keys, values
         q = self.to_q(h_query[..., 0])
         k, v = self.to_kv(h_ref[:, :, 0, :]).chunk(2, dim=1)
@@ -48,11 +49,13 @@ class PointAttentionBlock(nn.Module):
             qk_rel = qk_rel + rel_pos_emb
 
         qk_rel = qk_rel.reshape(qk_rel.shape[0], -1, qk_rel.shape[-1])
-        sim = self.attn_mlp(qk_rel).reshape(qk_rel.shape[0], -1, q.shape[2], k.shape[2])
+        sim = self.attn_mlp(qk_rel).reshape(qk_rel.shape[0], -1, q.shape[2],
+                                            k.shape[2])
         # attention
         if mask is not None:
             mask_value = torch.finfo(sim.dtype).min
-            sim.masked_fill_(~mask.unsqueeze(1).repeat(1, sim.shape[1], 1, 1), mask_value)
+            sim.masked_fill_(~mask.unsqueeze(1).repeat(1, sim.shape[1], 1, 1),
+                             mask_value)
         attn = sim.softmax(dim=3)
 
         return attn
