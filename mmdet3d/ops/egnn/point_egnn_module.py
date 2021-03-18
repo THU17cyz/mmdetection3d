@@ -4,8 +4,8 @@ from torch import nn as nn
 # from torch.nn import functional as F
 from typing import List
 
-from mmdet3d.ops import (KNNAndGroup, Points_Sampler, QueryAndGroup,
-                         gather_points)
+from ..group_points import (KNNAndGroup, Points_Sampler, QueryAndGroup,
+                            gather_points)
 from .egnn_layer import EGNNLayer
 
 

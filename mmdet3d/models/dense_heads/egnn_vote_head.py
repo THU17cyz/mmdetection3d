@@ -56,7 +56,8 @@ class EGNNVoteHead(nn.Module):
                  size_class_loss=None,
                  size_res_loss=None,
                  semantic_loss=None,
-                 iou_loss=None):
+                 iou_loss=None,
+                 vote_loss_toleracy=None):
         super(EGNNVoteHead, self).__init__()
         self.num_classes = num_classes
         self.train_cfg = train_cfg
@@ -92,6 +93,8 @@ class EGNNVoteHead(nn.Module):
             num_cls_out_channels=self._get_cls_out_channels(),
             num_reg_out_channels=self._get_reg_out_channels())
 
+        self.vote_loss_toleracy = vote_loss_toleracy
+
     def init_weights(self):
         """Initialize weights of VoteHead."""
         pass
@@ -123,13 +126,15 @@ class EGNNVoteHead(nn.Module):
         # seed_features = feat_dict['fp_features'][-1]
         # seed_indices = feat_dict['fp_indices'][-1]
 
-        seed_points = feat_dict['sa_xyz_shifted'][-1]
+        # seed_points = feat_dict['sa_xyz_shifted'][-1]
         seed_features = feat_dict['sa_features'][-1]
-        seed_indices = feat_dict['sa_indices'][-1]
+        # seed_indices = feat_dict['sa_indices'][-1]
 
         all_points = feat_dict['sa_xyz_shifted']
 
-        return seed_points, seed_features, seed_indices, all_points
+        all_indices = feat_dict['sa_indices']
+
+        return seed_features, all_points, all_indices
 
     def forward(self, feat_dict, sample_mod):
         """Forward pass.
@@ -152,10 +157,17 @@ class EGNNVoteHead(nn.Module):
         """
         assert sample_mod in ['vote', 'seed', 'random', 'spec']
 
-        seed_points, seed_features, seed_indices, all_points = \
+        seed_features, all_points, all_indices = \
             self._extract_input(feat_dict)
 
-        results = dict(seed_points=seed_points, seed_indices=seed_indices)
+        seed_points = all_points[-1]
+        seed_indices = all_indices[-1]
+
+        results = dict(
+            seed_points=seed_points,
+            seed_indices=seed_indices,
+            all_points=all_points,
+            all_indices=all_indices)
         '''
         # 1. generate vote_points from seed_points
         vote_points, vote_features, vote_offset = self.vote_module(
@@ -228,7 +240,7 @@ class EGNNVoteHead(nn.Module):
     @force_fp32(apply_to=('bbox_preds', ))
     def loss(self,
              bbox_preds,
-             points,
+             mlv_points,
              gt_bboxes_3d,
              gt_labels_3d,
              pts_semantic_mask=None,
@@ -240,7 +252,7 @@ class EGNNVoteHead(nn.Module):
 
         Args:
             bbox_preds (dict): Predictions from forward of vote head.
-            points (list[torch.Tensor]): Input points.
+            mlv_points (list[torch.Tensor]): Input mlv_points.
             gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`]): Ground truth \
                 bboxes of each sample.
             gt_labels_3d (list[torch.Tensor]): Labels of each sample.
@@ -256,14 +268,18 @@ class EGNNVoteHead(nn.Module):
         Returns:
             dict: Losses of Votenet.
         """
-        targets = self.get_targets(points, gt_bboxes_3d, gt_labels_3d,
+        targets = self.get_targets(mlv_points, gt_bboxes_3d, gt_labels_3d,
                                    pts_semantic_mask, pts_instance_mask,
                                    bbox_preds)
-        (vote_targets, vote_target_masks, size_class_targets, size_res_targets,
-         dir_class_targets, dir_res_targets, center_targets,
+        (mlv_vote_targets, mlv_vote_target_masks, size_class_targets,
+         size_res_targets, dir_class_targets, dir_res_targets, center_targets,
          assigned_center_targets, mask_targets, valid_gt_masks,
          objectness_targets, objectness_weights, box_loss_weights,
          valid_gt_weights) = targets
+
+        for i, (vote_targets, vote_target_masks, points) in enumerate(
+                zip(mlv_vote_targets, mlv_vote_target_masks, mlv_points)):
+            pass
 
         # # calculate vote loss
         # vote_loss = self.vote_module.get_loss(bbox_preds['seed_points'],
@@ -355,7 +371,7 @@ class EGNNVoteHead(nn.Module):
         return losses
 
     def get_targets(self,
-                    points,
+                    mlv_points,
                     gt_bboxes_3d,
                     gt_labels_3d,
                     pts_semantic_mask=None,
@@ -364,7 +380,7 @@ class EGNNVoteHead(nn.Module):
         """Generate targets of vote head.
 
         Args:
-            points (list[torch.Tensor]): Points of each batch.
+            mlv_points (list[torch.Tensor]): mlv_points of each batch.
             gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`]): Ground truth \
                 bboxes of each batch.
             gt_labels_3d (list[torch.Tensor]): Labels of each batch.
@@ -403,10 +419,10 @@ class EGNNVoteHead(nn.Module):
             for i in range(len(gt_labels_3d))
         ]
 
-        (vote_targets, vote_target_masks, size_class_targets, size_res_targets,
-         dir_class_targets, dir_res_targets, center_targets,
+        (mlv_vote_targets, mlv_vote_target_masks, size_class_targets,
+         size_res_targets, dir_class_targets, dir_res_targets, center_targets,
          assigned_center_targets, mask_targets, objectness_targets,
-         objectness_masks) = multi_apply(self.get_targets_single, points,
+         objectness_masks) = multi_apply(self.get_targets_single, mlv_points,
                                          gt_bboxes_3d, gt_labels_3d,
                                          pts_semantic_mask, pts_instance_mask,
                                          aggregated_points)
@@ -418,8 +434,18 @@ class EGNNVoteHead(nn.Module):
                                           (0, 0, 0, pad_num))
             valid_gt_masks[index] = F.pad(valid_gt_masks[index], (0, pad_num))
 
-        vote_targets = torch.stack(vote_targets)
-        vote_target_masks = torch.stack(vote_target_masks)
+        # vote_targets = torch.stack(vote_targets)
+        # vote_target_masks = torch.stack(vote_target_masks)
+        mlv_vote_targets = [
+            torch.stack(
+                [mlv_vote_targets[j][i] for j in len(mlv_vote_targets)])
+            for i in len(mlv_vote_targets[0])
+        ]
+        mlv_vote_target_masks = [
+            torch.stack([
+                mlv_vote_target_masks[j][i] for j in len(mlv_vote_target_masks)
+            ]) for i in len(mlv_vote_target_masks[0])
+        ]
         center_targets = torch.stack(center_targets)
         valid_gt_masks = torch.stack(valid_gt_masks)
 
@@ -437,39 +463,18 @@ class EGNNVoteHead(nn.Module):
         size_res_targets = torch.stack(size_res_targets)
         mask_targets = torch.stack(mask_targets)
 
-        return (vote_targets, vote_target_masks, size_class_targets,
+        return (mlv_vote_targets, mlv_vote_target_masks, size_class_targets,
                 size_res_targets, dir_class_targets, dir_res_targets,
                 center_targets, assigned_center_targets, mask_targets,
                 valid_gt_masks, objectness_targets, objectness_weights,
                 box_loss_weights, valid_gt_weights)
 
-    def get_targets_single(self,
-                           points,
-                           gt_bboxes_3d,
-                           gt_labels_3d,
-                           pts_semantic_mask=None,
-                           pts_instance_mask=None,
-                           aggregated_points=None):
-        """Generate targets of vote head for single batch.
-
-        Args:
-            points (torch.Tensor): Points of each batch.
-            gt_bboxes_3d (:obj:`BaseInstance3DBoxes`): Ground truth \
-                boxes of each batch.
-            gt_labels_3d (torch.Tensor): Labels of each batch.
-            pts_semantic_mask (None | torch.Tensor): Point-wise semantic
-                label of each batch.
-            pts_instance_mask (None | torch.Tensor): Point-wise instance
-                label of each batch.
-            aggregated_points (torch.Tensor): Aggregated points from
-                vote aggregation layer.
-
-        Returns:
-            tuple[torch.Tensor]: Targets of vote head.
-        """
-        assert self.bbox_coder.with_rot or pts_semantic_mask is not None
-
-        gt_bboxes_3d = gt_bboxes_3d.to(points.device)
+    def get_vote_targets_single(self,
+                                points,
+                                gt_bboxes_3d,
+                                gt_labels_3d,
+                                pts_semantic_mask=None,
+                                pts_instance_mask=None):
 
         # generate votes target
         num_points = points.shape[0]
@@ -521,23 +526,65 @@ class EGNNVoteHead(nn.Module):
         else:
             raise NotImplementedError
 
+        return vote_targets, vote_target_masks
+
+    def get_targets_single(self,
+                           mlv_points,
+                           gt_bboxes_3d,
+                           gt_labels_3d,
+                           pts_semantic_mask=None,
+                           pts_instance_mask=None,
+                           final_points=None):
+        """Generate targets of vote head for single batch.
+
+        Args:
+            mlv_points (torch.Tensor): mlv_points of each batch.
+            gt_bboxes_3d (:obj:`BaseInstance3DBoxes`): Ground truth \
+                boxes of each batch.
+            gt_labels_3d (torch.Tensor): Labels of each batch.
+            pts_semantic_mask (None | torch.Tensor): Point-wise semantic
+                label of each batch.
+            pts_instance_mask (None | torch.Tensor): Point-wise instance
+                label of each batch.
+            final_points (torch.Tensor): Aggregated points from
+                vote aggregation layer.
+
+        Returns:
+            tuple[torch.Tensor]: Targets of vote head.
+        """
+        assert self.bbox_coder.with_rot or pts_semantic_mask is not None
+
+        gt_bboxes_3d = gt_bboxes_3d.to(final_points.device)
+
+        mlv_vote_targets, mlv_vote_target_masks = [], []
+        for slv_points in mlv_points:
+            slv_vote_targets, slv_vote_target_masks = \
+                self.get_vote_targets_single(slv_points,
+                                             gt_bboxes_3d,
+                                             gt_labels_3d,
+                                             pts_semantic_mask,
+                                             pts_instance_mask)
+            mlv_vote_targets.append(slv_vote_targets)
+            mlv_vote_target_masks.append(slv_vote_target_masks)
+
         (center_targets, size_class_targets, size_res_targets,
          dir_class_targets,
          dir_res_targets) = self.bbox_coder.encode(gt_bboxes_3d, gt_labels_3d)
 
-        proposal_num = aggregated_points.shape[0]
+        proposal_num = final_points.shape[0]
         distance1, _, assignment, _ = chamfer_distance(
-            aggregated_points.unsqueeze(0),
+            final_points.unsqueeze(0),
             center_targets.unsqueeze(0),
             reduction='none')
         assignment = assignment.squeeze(0)
         euclidean_distance1 = torch.sqrt(distance1.squeeze(0) + 1e-6)
 
-        objectness_targets = points.new_zeros((proposal_num), dtype=torch.long)
+        objectness_targets = final_points.new_zeros((proposal_num),
+                                                    dtype=torch.long)
         objectness_targets[
             euclidean_distance1 < self.train_cfg['pos_distance_thr']] = 1
 
-        objectness_masks = points.new_zeros((proposal_num))
+        objectness_masks = final_points.new_zeros((proposal_num))
         objectness_masks[
             euclidean_distance1 < self.train_cfg['pos_distance_thr']] = 1.0
         objectness_masks[
@@ -562,7 +609,7 @@ class EGNNVoteHead(nn.Module):
         mask_targets = gt_labels_3d[assignment]
         assigned_center_targets = center_targets[assignment]
 
-        return (vote_targets, vote_target_masks, size_class_targets,
+        return (mlv_vote_targets, mlv_vote_target_masks, size_class_targets,
                 size_res_targets, dir_class_targets,
                 dir_res_targets, center_targets, assigned_center_targets,
                 mask_targets.long(), objectness_targets, objectness_masks)
