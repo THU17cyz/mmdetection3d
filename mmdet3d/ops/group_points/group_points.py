@@ -170,17 +170,13 @@ class KNNAndGroup(nn.Module):
         """
         xyz_trans = points_xyz.transpose(1, 2).contiguous()
         center_xyz_trans = center_xyz.transpose(1, 2).contiguous()
-        idx = knn(
-            self.k, xyz_trans, center_xyz_trans,
-            transposed=True)  # B, k, npoint
-        idx = idx.transpose(1, 2).contiguous()
+        idx = knn(self.k, xyz_trans, center_xyz_trans, True)  # B, k, npoint
+        idx = idx.transpose(1, 2).contiguous().int()
 
         # (B, 3, npoint, sample_num)
         grouped_xyz = grouping_operation(xyz_trans, idx)
         if self.subtract_center:
             grouped_xyz -= center_xyz_trans.unsqueeze(-1)
-        if self.normalize_xyz:
-            grouped_xyz /= self.max_radius
 
         if features is not None:
             grouped_features = grouping_operation(features, idx)

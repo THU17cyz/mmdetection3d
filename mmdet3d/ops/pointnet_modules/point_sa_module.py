@@ -99,9 +99,6 @@ class PointSAModuleMSG(nn.Module):
                         use_xyz=use_xyz,
                         normalize_xyz=normalize_xyz)
                 else:
-                    for i in range(10):
-                        print('____________________')
-                    assert False
                     grouper = KNNAndGroup(
                         sample_num,
                         use_xyz=use_xyz,

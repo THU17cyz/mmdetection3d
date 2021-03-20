@@ -179,10 +179,11 @@ def main():
     datasets = [build_dataset(cfg.data.train)]
     if len(cfg.workflow) == 2:
         val_dataset = copy.deepcopy(cfg.data.val)
-        try:
-            val_dataset.pipeline = cfg.data.train.pipeline
-        except AttributeError:
-            val_dataset.pipeline = cfg.data.train.dataset.pipeline
+        val_dataset.pipeline = cfg.val_pipeline
+        # try:
+        #     val_dataset.pipeline = cfg.data.train.pipeline
+        # except AttributeError:
+        #     val_dataset.pipeline = cfg.data.train.dataset.pipeline
         val_dataset.test_mode = False
         datasets.append(build_dataset(val_dataset))
     if cfg.checkpoint_config is not None:
@@ -194,7 +195,7 @@ def main():
             CLASSES=datasets[0].CLASSES)
     # add an attribute for visualization convenience
     model.CLASSES = datasets[0].CLASSES
-    print(val_dataset)
+    # print(val_dataset)
     train_detector(
         model,
         datasets,

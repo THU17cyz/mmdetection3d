@@ -33,12 +33,12 @@ class KNN(Function):
         """
         assert k > 0
 
-        B, npoint = center_xyz.shape[:2]
-        N = xyz.shape[1]
-
         if not transposed:
             xyz = xyz.transpose(2, 1).contiguous()
             center_xyz = center_xyz.transpose(2, 1).contiguous()
+
+        B, _, npoint = center_xyz.shape
+        N = xyz.shape[2]
 
         assert center_xyz.is_contiguous()
         assert xyz.is_contiguous()
