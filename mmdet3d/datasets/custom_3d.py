@@ -102,7 +102,7 @@ class Custom3DDataset(Dataset):
             sample_idx=sample_idx,
             file_name=pts_filename)
 
-        if not self.test_mode:
+        if not self.test_mode:  # True
             annos = self.get_ann_info(index)
             input_dict['ann_info'] = annos
             if self.filter_empty_gt and ~(annos['gt_labels_3d'] != -1).any():
@@ -149,6 +149,9 @@ class Custom3DDataset(Dataset):
             return None
         self.pre_pipeline(input_dict)
         example = self.pipeline(input_dict)
+        # print('input_dict', input_dict)
+        # print('pipeline', self.pipeline)
+        # print('example', example)
         if self.filter_empty_gt and \
                 (example is None or
                     ~(example['gt_labels_3d']._data != -1).any()):

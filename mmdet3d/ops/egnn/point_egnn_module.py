@@ -4,8 +4,9 @@ from torch import nn as nn
 # from torch.nn import functional as F
 from typing import List
 
-from ..group_points import (KNNAndGroup, Points_Sampler, QueryAndGroup,
-                            gather_points)
+from ..furthest_point_sample import Points_Sampler
+from ..gather_points import gather_points
+from ..group_points import KNNAndGroup, QueryAndGroup
 from .egnn_layer import EGNNLayer
 
 

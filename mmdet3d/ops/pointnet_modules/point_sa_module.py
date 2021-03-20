@@ -4,7 +4,8 @@ from torch import nn as nn
 from torch.nn import functional as F
 from typing import List
 
-from mmdet3d.ops import GroupAll, Points_Sampler, QueryAndGroup, gather_points
+from mmdet3d.ops import (GroupAll, KNNAndGroup, Points_Sampler, QueryAndGroup,
+                         gather_points)
 from .registry import SA_MODULES
 
 
@@ -90,12 +91,21 @@ class PointSAModuleMSG(nn.Module):
                     min_radius = radii[i - 1]
                 else:
                     min_radius = 0
-                grouper = QueryAndGroup(
-                    radius,
-                    sample_num,
-                    min_radius=min_radius,
-                    use_xyz=use_xyz,
-                    normalize_xyz=normalize_xyz)
+                if radius > 0.0:
+                    grouper = QueryAndGroup(
+                        radius,
+                        sample_num,
+                        min_radius=min_radius,
+                        use_xyz=use_xyz,
+                        normalize_xyz=normalize_xyz)
+                else:
+                    for i in range(10):
+                        print('____________________')
+                    assert False
+                    grouper = KNNAndGroup(
+                        sample_num,
+                        use_xyz=use_xyz,
+                        normalize_xyz=normalize_xyz)
             else:
                 grouper = GroupAll(use_xyz)
             self.groupers.append(grouper)

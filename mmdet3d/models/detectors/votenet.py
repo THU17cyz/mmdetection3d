@@ -60,7 +60,16 @@ class VoteNet(SingleStage3DDetector):
             bbox_preds, *loss_inputs, gt_bboxes_ignore=gt_bboxes_ignore)
         return losses
 
-    def simple_test(self, points, img_metas, imgs=None, rescale=False):
+    def simple_test(self,
+                    points,
+                    img_metas,
+                    imgs=None,
+                    rescale=False,
+                    gt_bboxes_3d=None,
+                    gt_labels_3d=None,
+                    pts_semantic_mask=None,
+                    pts_instance_mask=None,
+                    gt_bboxes_ignore=None):
         """Forward of testing.
 
         Args:
@@ -71,6 +80,14 @@ class VoteNet(SingleStage3DDetector):
         Returns:
             list: Predicted 3d boxes.
         """
+        gt_bboxes_3d = gt_bboxes_3d[0] if gt_bboxes_3d is not None else None
+        gt_labels_3d = gt_labels_3d[0] if gt_labels_3d is not None else None
+        pts_semantic_mask = pts_semantic_mask[
+            0] if pts_semantic_mask is not None else None
+        pts_instance_mask = pts_instance_mask[
+            0] if pts_instance_mask is not None else None
+        gt_bboxes_ignore = gt_bboxes_ignore[
+            0] if gt_bboxes_ignore is not None else None
         points_cat = torch.stack(points)
 
         x = self.extract_feat(points_cat)
@@ -81,6 +98,17 @@ class VoteNet(SingleStage3DDetector):
             bbox3d2result(bboxes, scores, labels)
             for bboxes, scores, labels in bbox_list
         ]
+
+        if gt_bboxes_3d is not None:
+            loss_inputs = (points, gt_bboxes_3d, gt_labels_3d,
+                           pts_semantic_mask, pts_instance_mask, img_metas)
+            losses = self.bbox_head.loss(
+                bbox_preds,
+                *loss_inputs,
+                gt_bboxes_ignore=gt_bboxes_ignore,
+                ret_target=False)
+            print(losses)
+            assert False
         return bbox_results
 
     def aug_test(self, points, img_metas, imgs=None, rescale=False):

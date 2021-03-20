@@ -2,7 +2,7 @@ import torch
 from mmcv.runner import auto_fp16
 from torch import nn as nn
 
-from mmdet3d.ops import PointEGNNModule  # , PointFPModule, build_sa_module
+from mmdet3d.ops import PointEGNNModule, PointFPModule  # , build_sa_module
 from mmdet.models import BACKBONES
 from .base_pointnet import BasePointNet
 
@@ -31,6 +31,7 @@ class EGNNSASSG(BasePointNet):
     """
 
     def __init__(self,
+                 in_channels,
                  num_points=(2048, 1024, 512, 256),
                  radius=(0.2, 0.4, 0.8, 1.2),
                  num_samples=(64, 32, 16, 16),
@@ -39,37 +40,39 @@ class EGNNSASSG(BasePointNet):
 
         super().__init__()
         self.num_sa = len(sa_cfgs)
-        # self.num_fp = len(fp_channels)
+        self.num_fp = len(fp_channels)
 
         # assert len(num_points) == len(radius) == len(num_samples) == len(
         #     sa_channels)
-        # assert len(sa_channels) >= len(fp_channels)
+        assert self.num_sa >= self.num_fp
 
         self.SA_modules = nn.ModuleList()
         # sa_in_channel = in_channels - 3  # number of channels without xyz
-        # skip_channel_list = [sa_in_channel]
+
+        sa_in_channel = in_channels
+        skip_channel_list = [sa_in_channel]
 
         for sa_index in range(self.num_sa):
             # cur_sa_mlps = list(sa_channels[sa_index])
             # cur_sa_mlps = [sa_in_channel] + cur_sa_mlps
             # sa_out_channel = cur_sa_mlps[-1]
+            sa_out_channel = 1  # TODO
 
             self.SA_modules.append(PointEGNNModule(**sa_cfgs[sa_index]))
-            # skip_channel_list.append(sa_out_channel)
-            # sa_in_channel = sa_out_channel
+            skip_channel_list.append(sa_out_channel)
+            sa_in_channel = sa_out_channel
 
-        # self.FP_modules = nn.ModuleList()
-        #
-        # fp_source_channel = skip_channel_list.pop()
-        # fp_target_channel = skip_channel_list.pop()
-        # for fp_index in range(len(fp_channels)):
-        #     cur_fp_mlps = list(fp_channels[fp_index])
-        #     cur_fp_mlps = [fp_source_channel + fp_target_channel]
-        # + cur_fp_mlps
-        #     self.FP_modules.append(PointFPModule(mlp_channels=cur_fp_mlps))
-        #     if fp_index != len(fp_channels) - 1:
-        #         fp_source_channel = cur_fp_mlps[-1]
-        #         fp_target_channel = skip_channel_list.pop()
+        self.FP_modules = nn.ModuleList()
+
+        fp_source_channel = skip_channel_list.pop()
+        fp_target_channel = skip_channel_list.pop()
+        for fp_index in range(len(fp_channels)):
+            cur_fp_mlps = list(fp_channels[fp_index])
+            cur_fp_mlps = [fp_source_channel + fp_target_channel] + cur_fp_mlps
+            self.FP_modules.append(PointFPModule(mlp_channels=cur_fp_mlps))
+            if fp_index != len(fp_channels) - 1:
+                fp_source_channel = cur_fp_mlps[-1]
+                fp_target_channel = skip_channel_list.pop()
 
     @auto_fp16(apply_to=('points', ))
     def forward(self, points):
@@ -109,23 +112,26 @@ class EGNNSASSG(BasePointNet):
             sa_indices.append(
                 torch.gather(sa_indices[-1], 1, cur_indices.long()))
 
-        # fp_xyz = [sa_xyz[-1]]
-        # fp_features = [sa_features[-1]]
-        # fp_indices = [sa_indices[-1]]
-        #
-        # for i in range(self.num_fp):
-        #     fp_features.append(self.FP_modules[i](
-        #         sa_xyz[self.num_sa - i - 1], sa_xyz[self.num_sa - i],
-        #         sa_features[self.num_sa - i - 1], fp_features[-1]))
-        #     fp_xyz.append(sa_xyz[self.num_sa - i - 1])
-        #     fp_indices.append(sa_indices[self.num_sa - i - 1])
+        fp_xyz = [sa_xyz[-1]]
+        fp_features = [sa_features[-1]]
+        fp_indices = [sa_indices[-1]]
+
+        for i in range(self.num_fp):
+            fp_features.append(self.FP_modules[i](
+                sa_xyz[self.num_sa - i - 1], sa_xyz[self.num_sa - i],
+                sa_features[self.num_sa - i - 1], fp_features[-1]))
+            fp_xyz.append(sa_xyz[self.num_sa - i - 1])
+            fp_indices.append(sa_indices[self.num_sa - i - 1])
 
         # ret = dict(
         #     fp_xyz=fp_xyz, fp_features=fp_features, fp_indices=fp_indices)
 
         ret = dict(
-            sa_xyz=sa_xyz,
+            # sa_xyz=sa_xyz,
             sa_xyz_shifted=sa_xyz_shifted,
-            sa_features=sa_features,
+            # sa_features=sa_features,
+            fp_xyz=fp_xyz,
+            fp_features=fp_features,
+            fp_indices=fp_indices,
             sa_indices=sa_indices)
         return ret
