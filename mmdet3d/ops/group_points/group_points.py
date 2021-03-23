@@ -148,13 +148,11 @@ class KNNAndGroup(nn.Module):
                  k,
                  use_xyz=True,
                  return_grouped_xyz=False,
-                 normalize_xyz=False,
                  subtract_center=True):
         super(KNNAndGroup, self).__init__()
         self.k = k
         self.use_xyz = use_xyz
         self.return_grouped_xyz = return_grouped_xyz
-        self.normalize_xyz = normalize_xyz
         self.subtract_center = subtract_center
 
     def forward(self, points_xyz, center_xyz, features=None):

@@ -35,11 +35,12 @@ class EGNNSASSG(BasePointNet):
                  num_points=(2048, 1024, 512, 256),
                  radius=(0.2, 0.4, 0.8, 1.2),
                  num_samples=(64, 32, 16, 16),
-                 sa_cfgs=None,
-                 fp_channels=((256, 256), (256, 256))):
+                 egnn_layer_cfgs=None,
+                 fp_channels=((256, 256), (256, 256)),
+                 fp_norm_cfg=dict(type='BN2d')):
 
         super().__init__()
-        self.num_sa = len(sa_cfgs)
+        self.num_sa = len(egnn_layer_cfgs)
         self.num_fp = len(fp_channels)
 
         # assert len(num_points) == len(radius) == len(num_samples) == len(
@@ -55,10 +56,15 @@ class EGNNSASSG(BasePointNet):
         for sa_index in range(self.num_sa):
             # cur_sa_mlps = list(sa_channels[sa_index])
             # cur_sa_mlps = [sa_in_channel] + cur_sa_mlps
-            # sa_out_channel = cur_sa_mlps[-1]
-            sa_out_channel = 1  # TODO
-
-            self.SA_modules.append(PointEGNNModule(**sa_cfgs[sa_index]))
+            sa_out_channel = egnn_layer_cfgs[sa_index].mlp_dims[-1][-1]
+            # sa_out_channel = 1  # TODO
+            self.SA_modules.append(
+                PointEGNNModule(
+                    num_point=num_points[sa_index],
+                    radius=radius[sa_index],
+                    num_sample=num_samples[sa_index],
+                    egnn_layer_cfg=egnn_layer_cfgs[sa_index],
+                ))
             skip_channel_list.append(sa_out_channel)
             sa_in_channel = sa_out_channel
 
@@ -69,7 +75,8 @@ class EGNNSASSG(BasePointNet):
         for fp_index in range(len(fp_channels)):
             cur_fp_mlps = list(fp_channels[fp_index])
             cur_fp_mlps = [fp_source_channel + fp_target_channel] + cur_fp_mlps
-            self.FP_modules.append(PointFPModule(mlp_channels=cur_fp_mlps))
+            self.FP_modules.append(
+                PointFPModule(mlp_channels=cur_fp_mlps, norm_cfg=fp_norm_cfg))
             if fp_index != len(fp_channels) - 1:
                 fp_source_channel = cur_fp_mlps[-1]
                 fp_target_channel = skip_channel_list.pop()
@@ -95,6 +102,9 @@ class EGNNSASSG(BasePointNet):
         xyz, features = self._split_point_feats(points)
 
         batch, num_points = xyz.shape[:2]
+
+        features = xyz.new_ones((batch, 2, num_points))
+
         indices = xyz.new_tensor(range(num_points)).unsqueeze(0).repeat(
             batch, 1).long()
 
@@ -107,7 +117,7 @@ class EGNNSASSG(BasePointNet):
             cur_xyz, cur_xyz_shifted, cur_features, cur_indices = \
                 self.SA_modules[i](sa_xyz_shifted[i], sa_features[i])
             sa_xyz.append(cur_xyz)
-            sa_xyz_shifted.append(cur_xyz_shifted)
+            sa_xyz_shifted.append(cur_xyz_shifted.transpose(1, 2).contiguous())
             sa_features.append(cur_features)
             sa_indices.append(
                 torch.gather(sa_indices[-1], 1, cur_indices.long()))
@@ -135,3 +145,22 @@ class EGNNSASSG(BasePointNet):
             fp_indices=fp_indices,
             sa_indices=sa_indices)
         return ret
+
+    def _split_point_feats(self, points):
+        """Split coordinates and features of input points.
+
+        Args:
+            points (torch.Tensor): Point coordinates with features,
+                with shape (B, N, 3 + input_feature_dim).
+
+        Returns:
+            torch.Tensor: Coordinates of input points.
+            torch.Tensor: Features of input points.
+        """
+        xyz = points[..., 0:3].contiguous()
+        if points.size(-1) > 3:
+            features = points[..., 3:].transpose(1, 2).contiguous()
+        else:
+            features = None
+
+        return xyz, features

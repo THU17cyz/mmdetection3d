@@ -8,7 +8,7 @@ from mmdet3d.core.post_processing import aligned_3d_nms
 from mmdet3d.models.builder import build_loss
 from mmdet3d.models.losses import chamfer_distance
 from mmdet3d.models.model_utils import VoteModule
-from mmdet3d.ops import build_sa_module  # , furthest_point_sample
+from mmdet3d.ops import build_sa_module, furthest_point_sample
 from mmdet.core import build_bbox_coder, multi_apply
 from mmdet.models import HEADS
 from .base_conv_bbox_head import BaseConvBboxHead
@@ -127,12 +127,12 @@ class EGNNVoteHead(nn.Module):
         # seed_indices = feat_dict['fp_indices'][-1]
 
         # seed_points = feat_dict['sa_xyz_shifted'][-1]
-        seed_features = feat_dict['sa_features'][-1]
+        seed_features = feat_dict['fp_features'][-1]
         # seed_indices = feat_dict['sa_indices'][-1]
 
-        all_points = feat_dict['sa_xyz_shifted']
+        all_points = feat_dict['fp_xyz']
 
-        all_indices = feat_dict['sa_indices']
+        all_indices = feat_dict['fp_indices']
 
         return seed_features, all_points, all_indices
 
@@ -163,12 +163,14 @@ class EGNNVoteHead(nn.Module):
         seed_points = all_points[-1]
         seed_indices = all_indices[-1]
 
+        print(seed_features.dtype, seed_points.dtype, seed_indices.dtype)
+
         results = dict(
             seed_points=seed_points,
             seed_indices=seed_indices,
             all_points=all_points,
             all_indices=all_indices)
-        '''
+
         # 1. generate vote_points from seed_points
         vote_points, vote_features, vote_offset = self.vote_module(
             seed_points, seed_features)
@@ -225,13 +227,13 @@ class EGNNVoteHead(nn.Module):
         # 4. decode predictions
         decode_res = self.bbox_coder.split_pred(cls_predictions,
                                                 reg_predictions,
-                                                aggregated_points)'''
+                                                aggregated_points)
 
-        cls_predictions, reg_predictions = self.conv_pred(seed_features)
+        # cls_predictions, reg_predictions = self.conv_pred(seed_features)
 
-        # 4. decode predictions
-        decode_res = self.bbox_coder.split_pred(cls_predictions,
-                                                reg_predictions, seed_points)
+        # # 4. decode predictions
+        # decode_res = self.bbox_coder.split_pred(cls_predictions,
+        #                                         reg_predictions, seed_points)
 
         results.update(decode_res)
 

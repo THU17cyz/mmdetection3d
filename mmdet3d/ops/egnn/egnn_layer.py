@@ -9,6 +9,7 @@ from .mlp import MLP
 class EGNNLayer(nn.Module):
 
     def __init__(self,
+                 mlp_dims=None,
                  edge_mlp=None,
                  coord_mlp=None,
                  node_mlp=None,
@@ -17,6 +18,12 @@ class EGNNLayer(nn.Module):
                  attention_block=None,
                  k=None):
         super().__init__()
+        edge_mlp.update(in_channel=mlp_dims[0][0])
+        edge_mlp.update(conv_channels=tuple(mlp_dims[0][1:]))
+        coord_mlp.update(in_channel=mlp_dims[1][0])
+        coord_mlp.update(conv_channels=tuple(mlp_dims[1][1:]))
+        node_mlp.update(in_channel=mlp_dims[2][0])
+        node_mlp.update(conv_channels=tuple(mlp_dims[2][1:]))
         self.edge_mlp = MLP(**edge_mlp)  # l-nl-l-nl
         self.coord_mlp = MLP(**coord_mlp)  # l-nl-l
         self.node_mlp = MLP(**node_mlp)  # l-nl-l-res
@@ -37,7 +44,7 @@ class EGNNLayer(nn.Module):
                 mask=None):
         batch_size, xyz_dim, n_query = x_query.shape
         assert xyz_dim == 3
-        feat_dim, n_ref = h_ref.shape[1:]
+        feat_dim, _, n_ref = h_ref.shape[1:]
 
         if self.neighbor_mode == 'knn':
             raise NotImplementedError
@@ -77,7 +84,7 @@ class EGNNLayer(nn.Module):
             edge_feat.reshape(batch_size, -1, n_query *
                               n_ref))  # batch_size, m_edge_dim, n_query, n_ref
 
-        x_res_weight = self.coord_mlp(m_edge)
+        x_res_weight = self.coord_mlp(m_edge).sum(1)
         x_res_weight = x_res_weight.reshape(
             batch_size, -1, n_query, n_ref)  # batch_size, 1, n_query, n_ref
 
@@ -93,7 +100,7 @@ class EGNNLayer(nn.Module):
             else:
                 m_node = (m_edge * mask.unsqueeze(1)).sum(dim=3)
         elif self.gather_mode == 'max':
-            m_node = m_edge.max(dim=3)
+            m_node = m_edge.max(dim=3)[0]
         elif self.gather_mode == 'avg':
             if mask is None:
                 m_node = m_edge.avg(dim=3)  # batch_size, m_edge_dim, n_query
@@ -111,8 +118,8 @@ class EGNNLayer(nn.Module):
             raise NotImplementedError
 
         node_feat = torch.cat(
-            [h_query, m_node],
+            [h_query[..., 0], m_node],
             dim=1)  # batch_size, m_edge_dim + feat_dim, n_query
-        h_update = self.node_mlp(node_feat)
+        h_update = self.node_mlp(node_feat)  # + h_query
 
         return x_update, h_update

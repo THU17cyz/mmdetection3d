@@ -1,0 +1,127 @@
+gather_mode = 'max'
+neighbor_mode = 'all'
+
+edge_mlp = dict(
+    last_act=True,
+    residual=False,
+    act_cfg=dict(type='Swish'),
+    conv_cfg=dict(type='Conv1d'),
+    norm_cfg=dict(type='GN', num_groups=2))
+
+coord_mlp = dict(
+    last_act=False,
+    residual=False,
+    act_cfg=dict(type='Swish'),
+    conv_cfg=dict(type='Conv1d'),
+    norm_cfg=dict(type='GN', num_groups=2))
+
+node_mlp = dict(
+    last_act=False,
+    residual=False,
+    act_cfg=dict(type='Swish'),
+    conv_cfg=dict(type='Conv1d'),
+    norm_cfg=dict(type='GN', num_groups=2))
+
+mlp_dims = [[[5, 64, 64], [64, 64, 32], [66, 64, 128]],
+            [[257, 128, 128], [128, 128, 32], [256, 128, 128]],
+            [[257, 128, 128], [128, 128, 32], [256, 128, 128]],
+            [[257, 128, 128], [128, 128, 32], [256, 128, 256]]]
+
+model = dict(
+    type='EGNNVoteNet',
+    backbone=dict(
+        type='EGNNSASSG',
+        in_channels=2,
+        num_points=(2048, 1024, 512, 256),
+        radius=(0.0, 0.0, 0.0, 0.0),
+        num_samples=(64, 32, 16, 16),
+        egnn_layer_cfgs=(
+            dict(
+                mlp_dims=mlp_dims[0],
+                edge_mlp=edge_mlp,
+                coord_mlp=coord_mlp,
+                node_mlp=node_mlp,
+                gather_mode=gather_mode,
+                neighbor_mode=neighbor_mode),
+            dict(
+                mlp_dims=mlp_dims[1],
+                edge_mlp=edge_mlp,
+                coord_mlp=coord_mlp,
+                node_mlp=node_mlp,
+                gather_mode=gather_mode,
+                neighbor_mode=neighbor_mode),
+            dict(
+                mlp_dims=mlp_dims[2],
+                edge_mlp=edge_mlp,
+                coord_mlp=coord_mlp,
+                node_mlp=node_mlp,
+                gather_mode=gather_mode,
+                neighbor_mode=neighbor_mode),
+            dict(
+                mlp_dims=mlp_dims[3],
+                edge_mlp=edge_mlp,
+                coord_mlp=coord_mlp,
+                node_mlp=node_mlp,
+                gather_mode=gather_mode,
+                neighbor_mode=neighbor_mode)
+            # (64, 64, 128), (128, 128, 256), (128, 128, 256),
+            #          (128, 128, 256)
+        ),
+        fp_channels=((256, 256), (256, 256)),
+        fp_norm_cfg=dict(type='GN', num_groups=2)),
+    bbox_head=dict(
+        type='EGNNVoteHead',
+        vote_module_cfg=dict(
+            in_channels=256,
+            vote_per_seed=1,
+            gt_per_seed=3,
+            conv_channels=(256, 256),
+            conv_cfg=dict(type='Conv1d'),
+            norm_cfg=dict(type='BN1d'),
+            norm_feats=True,
+            vote_loss=dict(
+                type='ChamferDistance',
+                mode='l1',
+                reduction='none',
+                loss_dst_weight=10.0)),
+        vote_aggregation_cfg=dict(
+            type='PointSAModule',
+            num_point=256,
+            radius=0.3,
+            num_sample=16,
+            mlp_channels=[256, 128, 128, 128],
+            use_xyz=True,
+            normalize_xyz=True),
+        pred_layer_cfg=dict(
+            in_channels=128, shared_conv_channels=(128, 128), bias=True),
+        conv_cfg=dict(type='Conv1d'),
+        norm_cfg=dict(type='BN1d'),
+        objectness_loss=dict(
+            type='CrossEntropyLoss',
+            class_weight=[0.2, 0.8],
+            reduction='sum',
+            loss_weight=5.0),
+        center_loss=dict(
+            type='ChamferDistance',
+            mode='l2',
+            reduction='sum',
+            loss_src_weight=10.0,
+            loss_dst_weight=10.0),
+        dir_class_loss=dict(
+            type='CrossEntropyLoss', reduction='sum', loss_weight=1.0),
+        dir_res_loss=dict(
+            type='SmoothL1Loss', reduction='sum', loss_weight=10.0),
+        size_class_loss=dict(
+            type='CrossEntropyLoss', reduction='sum', loss_weight=1.0),
+        size_res_loss=dict(
+            type='SmoothL1Loss', reduction='sum', loss_weight=10.0 / 3.0),
+        semantic_loss=dict(
+            type='CrossEntropyLoss', reduction='sum', loss_weight=1.0)),
+    # model training and testing settings
+    train_cfg=dict(
+        pos_distance_thr=0.3, neg_distance_thr=0.6, sample_mod='vote'),
+    test_cfg=dict(
+        sample_mod='seed',
+        nms_thr=0.25,
+        score_thr=0.05,
+        per_class_proposal=True))

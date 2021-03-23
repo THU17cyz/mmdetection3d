@@ -44,7 +44,6 @@ class PointEGNNModuleMSG(nn.Module):
 
     def __init__(self,
                  num_point: int,
-                 ks: List[int] = None,
                  radii: List[float] = None,
                  sample_nums: List[int] = None,
                  egnn_layer_cfgs: List[dict] = None,
@@ -52,11 +51,7 @@ class PointEGNNModuleMSG(nn.Module):
                  fps_sample_range_list: List[int] = [-1],
                  dilated_group: bool = False):
         super().__init__()
-        if radii is not None:
-            assert len(radii) == len(sample_nums) == len(egnn_layer_cfgs)
-        else:
-            assert ks is not None
-            assert len(ks) == len(egnn_layer_cfgs)
+        assert len(radii) == len(sample_nums) == len(egnn_layer_cfgs)
         assert isinstance(fps_mod, list) or isinstance(fps_mod, tuple)
         assert isinstance(fps_sample_range_list, list) or isinstance(
             fps_sample_range_list, tuple)
@@ -80,7 +75,7 @@ class PointEGNNModuleMSG(nn.Module):
         self.points_sampler = Points_Sampler(self.num_point, self.fps_mod_list,
                                              self.fps_sample_range_list)
 
-        if radii is not None:
+        if radii[0] > 0.0:
             for i in range(len(radii)):
                 radius = radii[i]
                 sample_num = sample_nums[i]
@@ -103,11 +98,10 @@ class PointEGNNModuleMSG(nn.Module):
                 self.groupers.append(grouper)
             self.group_mode = 'ball'
         else:
-            for i in range(len(ks)):
-                k = ks[i]
+            for i in range(len(sample_nums)):
                 if num_point is not None:
                     grouper = KNNAndGroup(
-                        k,
+                        sample_nums[i],
                         use_xyz=False,
                         subtract_center=False,
                         return_grouped_xyz=True)
@@ -184,7 +178,7 @@ class PointEGNNModuleMSG(nn.Module):
 
             new_xyz_shifted_list.append(new_xyz_shifted)
 
-        return dsamp_xyz, torch.cat(
+        return dsamp_xyz_t, torch.cat(
             new_xyz_shifted_list, dim=1), torch.cat(
                 new_features_list, dim=1), indices
 

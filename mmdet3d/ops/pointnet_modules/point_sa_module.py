@@ -99,10 +99,7 @@ class PointSAModuleMSG(nn.Module):
                         use_xyz=use_xyz,
                         normalize_xyz=normalize_xyz)
                 else:
-                    grouper = KNNAndGroup(
-                        sample_num,
-                        use_xyz=use_xyz,
-                        normalize_xyz=normalize_xyz)
+                    grouper = KNNAndGroup(sample_num, use_xyz=use_xyz)
             else:
                 grouper = GroupAll(use_xyz)
             self.groupers.append(grouper)
