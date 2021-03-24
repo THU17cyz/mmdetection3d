@@ -99,16 +99,15 @@ class VoteNet(SingleStage3DDetector):
             for bboxes, scores, labels in bbox_list
         ]
 
-        if gt_bboxes_3d is not None:
-            loss_inputs = (points, gt_bboxes_3d, gt_labels_3d,
-                           pts_semantic_mask, pts_instance_mask, img_metas)
-            losses = self.bbox_head.loss(
-                bbox_preds,
-                *loss_inputs,
-                gt_bboxes_ignore=gt_bboxes_ignore,
-                ret_target=False)
-            print(losses)
-            assert False
+        # if gt_bboxes_3d is not None:
+        #     loss_inputs = (points, gt_bboxes_3d, gt_labels_3d,
+        #                    pts_semantic_mask, pts_instance_mask, img_metas)
+        #     losses = self.bbox_head.loss(
+        #         bbox_preds,
+        #         *loss_inputs,
+        #         gt_bboxes_ignore=gt_bboxes_ignore,
+        #         ret_target=False)
+
         return bbox_results
 
     def aug_test(self, points, img_metas, imgs=None, rescale=False):

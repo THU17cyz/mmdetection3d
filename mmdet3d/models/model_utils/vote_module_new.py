@@ -7,7 +7,7 @@ from mmdet3d.models.builder import build_loss
 from mmdet3d.models.losses import ChamferDistance
 
 
-class VoteModule(nn.Module):
+class VoteModuleNew(nn.Module):
     """Vote module.
 
     Generate votes from seed point features.

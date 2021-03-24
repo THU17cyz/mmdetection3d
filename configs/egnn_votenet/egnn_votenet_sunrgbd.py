@@ -1,35 +1,25 @@
 _base_ = [
-    '../_base_/datasets/scannet-3d-18class.py', '../_base_/models/votenet.py',
-    '../_base_/schedules/schedule_3x.py', '../_base_/default_runtime.py'
+    '../_base_/datasets/sunrgbd-3d-10class.py',
+    '../_base_/models/egnn_votenet.py', '../_base_/schedules/schedule_3x.py',
+    '../_base_/default_runtime.py'
 ]
-
 # model settings
 model = dict(
     bbox_head=dict(
-        num_classes=18,
+        num_classes=10,
         bbox_coder=dict(
             type='PartialBinBasedBBoxCoder',
-            num_sizes=18,
-            num_dir_bins=1,
-            with_rot=False,
-            mean_sizes=[[0.76966727, 0.8116021, 0.92573744],
-                        [1.876858, 1.8425595, 1.1931566],
-                        [0.61328, 0.6148609, 0.7182701],
-                        [1.3955007, 1.5121545, 0.83443564],
-                        [0.97949594, 1.0675149, 0.6329687],
-                        [0.531663, 0.5955577, 1.7500148],
-                        [0.9624706, 0.72462326, 1.1481868],
-                        [0.83221924, 1.0490936, 1.6875663],
-                        [0.21132214, 0.4206159, 0.5372846],
-                        [1.4440073, 1.8970833, 0.26985747],
-                        [1.0294262, 1.4040797, 0.87554324],
-                        [1.3766412, 0.65521795, 1.6813129],
-                        [0.6650819, 0.71111923, 1.298853],
-                        [0.41999173, 0.37906948, 1.7513971],
-                        [0.59359556, 0.5912492, 0.73919016],
-                        [0.50867593, 0.50656086, 0.30136237],
-                        [1.1511526, 1.0546296, 0.49706793],
-                        [0.47535285, 0.49249494, 0.5802117]])))
+            num_sizes=10,
+            num_dir_bins=12,
+            with_rot=True,
+            mean_sizes=[
+                [2.114256, 1.620300, 0.927272], [0.791118, 1.279516, 0.718182],
+                [0.923508, 1.867419, 0.845495], [0.591958, 0.552978, 0.827272],
+                [0.699104, 0.454178, 0.75625], [0.69519, 1.346299, 0.736364],
+                [0.528526, 1.002642, 1.172878], [0.500618, 0.632163, 0.683424],
+                [0.404671, 1.071108, 1.688889], [0.76584, 1.398258, 0.472728]
+            ]),
+    ))
 
 # optimizer
 # yapf:disable
@@ -85,5 +75,7 @@ val_pipeline = [
 
 workflow = [('train', 1), ('val', 1)]
 
-# data = dict(samples_per_gpu=8, val=dict(test_mode=False))
-# load_from = 'https://download.openmmlab.com/mmdetection3d/v0.1.0_models/votenet/votenet_8x8_scannet-3d-18class/votenet_8x8_scannet-3d-18class_20200620_230238-2cea9c3a.pth'  # noqa
+data = dict(samples_per_gpu=8)
+find_unused_parameters = True
+lr = 0.001
+optimizer = dict(type='AdamW', lr=lr, weight_decay=0.01)

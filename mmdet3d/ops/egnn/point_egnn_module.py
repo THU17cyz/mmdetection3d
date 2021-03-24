@@ -9,6 +9,8 @@ from ..gather_points import gather_points
 from ..group_points import KNNAndGroup, QueryAndGroup
 from .egnn_layer import EGNNLayer
 
+torch.autograd.set_detect_anomaly(True)
+
 
 class PointEGNNModuleMSG(nn.Module):
     """Point set abstraction module with multi-scale grouping used in
@@ -91,7 +93,7 @@ class PointEGNNModuleMSG(nn.Module):
                         use_xyz=False,
                         subtract_center=False,
                         return_grouped_xyz=True,
-                        return_unique_cnt=True)
+                        return_mask=True)
                 else:
                     # TODO
                     raise NotImplementedError
@@ -174,6 +176,7 @@ class PointEGNNModuleMSG(nn.Module):
             new_xyz_shifted, new_features = self.egnn_layers[i](
                 dsamp_xyz, new_xyz, dsamp_features, new_features, mask=mask)
 
+            # new_features = torch.ones_like(new_features)
             new_features_list.append(new_features)
 
             new_xyz_shifted_list.append(new_xyz_shifted)

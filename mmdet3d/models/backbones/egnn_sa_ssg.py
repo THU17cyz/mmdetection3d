@@ -43,6 +43,9 @@ class EGNNSASSG(BasePointNet):
         self.num_sa = len(egnn_layer_cfgs)
         self.num_fp = len(fp_channels)
 
+        # sa_channels = ((64, 64, 128), (128, 128, 256), (128, 128, 256),
+        #                (128, 128, 256))
+
         # assert len(num_points) == len(radius) == len(num_samples) == len(
         #     sa_channels)
         assert self.num_sa >= self.num_fp
@@ -57,7 +60,6 @@ class EGNNSASSG(BasePointNet):
             # cur_sa_mlps = list(sa_channels[sa_index])
             # cur_sa_mlps = [sa_in_channel] + cur_sa_mlps
             sa_out_channel = egnn_layer_cfgs[sa_index].mlp_dims[-1][-1]
-            # sa_out_channel = 1  # TODO
             self.SA_modules.append(
                 PointEGNNModule(
                     num_point=num_points[sa_index],
@@ -65,6 +67,24 @@ class EGNNSASSG(BasePointNet):
                     num_sample=num_samples[sa_index],
                     egnn_layer_cfg=egnn_layer_cfgs[sa_index],
                 ))
+
+            # cur_sa_mlps = list(sa_channels[sa_index])
+            # cur_sa_mlps = [sa_in_channel] + cur_sa_mlps
+            # sa_out_channel = cur_sa_mlps[-1]
+
+            # self.SA_modules.append(
+            #     build_sa_module(
+            #         num_point=num_points[sa_index],
+            #         radius=radius[sa_index],
+            #         num_sample=num_samples[sa_index],
+            #         mlp_channels=cur_sa_mlps,
+            #         norm_cfg=dict(type='BN2d'),
+            #         cfg=dict(
+            #          type='PointSAModule',
+            #          pool_mod='max',
+            #          use_xyz=True,
+            #          normalize_xyz=True)))
+
             skip_channel_list.append(sa_out_channel)
             sa_in_channel = sa_out_channel
 

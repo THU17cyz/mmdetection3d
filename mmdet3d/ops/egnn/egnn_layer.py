@@ -58,20 +58,20 @@ class EGNNLayer(nn.Module):
             assert neighbor is not None
 
         if self.neighbor_mode != 'all':
-            x_ref = x_ref.unsqueeze(2).repeat(
-                1, 1, n_query, 1)  # batch_size, 3, n_query, n_ref
-            h_ref = h_ref.unsqueeze(2).repeat(
-                1, 1, n_query, 1)  # batch_size, feat_dim, n_query, n_ref
+            x_ref = x_ref.unsqueeze(2).expand(
+                -1, -1, n_query, -1)  # batch_size, 3, n_query, n_ref
+            h_ref = h_ref.unsqueeze(2).expand(
+                -1, -1, n_query, -1)  # batch_size, feat_dim, n_query, n_ref
             x_ref = x_ref.gather(
-                dim=3, index=neighbor.repeat(1, xyz_dim, 1, 1))
+                dim=3, index=neighbor.expand(-1, xyz_dim, -1, -1))
             h_ref = h_ref.gather(
-                dim=3, index=neighbor.repeat(1, feat_dim, 1, 1))
+                dim=3, index=neighbor.expand(-1, feat_dim, -1, -1))
             n_ref = neighbor.shape[2]
 
-        x_query = x_query.unsqueeze(3).repeat(
-            1, 1, 1, n_ref)  # batch_size, 3, n_query, n_ref
-        h_query = h_query.unsqueeze(3).repeat(
-            1, 1, 1, n_ref)  # batch_size, feat_dim, n_query, n_ref
+        x_query = x_query.unsqueeze(3).expand(
+            -1, -1, -1, n_ref)  # batch_size, 3, n_query, n_ref
+        h_query = h_query.unsqueeze(3).expand(
+            -1, -1, -1, n_ref)  # batch_size, feat_dim, n_query, n_ref
 
         x_diff = x_query - x_ref  # batch_size, 3, n_query, n_ref
         x_dist2 = (x_diff * x_diff).sum(

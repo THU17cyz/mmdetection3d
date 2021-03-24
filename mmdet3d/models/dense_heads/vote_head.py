@@ -6,7 +6,7 @@ from torch.nn import functional as F
 
 from mmdet3d.core.post_processing import aligned_3d_nms
 from mmdet3d.models.builder import build_loss
-from mmdet3d.models.losses import chamfer_distance
+from mmdet3d.models.losses import ChamferDistance, chamfer_distance
 from mmdet3d.models.model_utils import VoteModule
 from mmdet3d.ops import build_sa_module, furthest_point_sample
 from mmdet.core import build_bbox_coder, multi_apply
@@ -221,7 +221,8 @@ class VoteHead(nn.Module):
              pts_instance_mask=None,
              img_metas=None,
              gt_bboxes_ignore=None,
-             ret_target=False):
+             ret_target=False,
+             ret_metrics=True):
         """Compute loss.
 
         Args:
@@ -252,10 +253,16 @@ class VoteHead(nn.Module):
          valid_gt_weights) = targets
 
         # calculate vote loss
-        vote_loss = self.vote_module.get_loss(bbox_preds['seed_points'],
-                                              bbox_preds['vote_points'],
-                                              bbox_preds['seed_indices'],
-                                              vote_target_masks, vote_targets)
+        vote_loss = self.vote_module.get_loss(
+            bbox_preds['seed_points'],
+            bbox_preds['vote_points'],
+            bbox_preds['seed_indices'],
+            vote_target_masks,
+            vote_targets,
+            ret_metrics=ret_metrics)
+        if ret_metrics:
+            vote_loss, vote_dist, seed_gt_votes_mask = vote_loss[0], vote_loss[
+                1], vote_loss[2]
 
         # calculate objectness loss
         objectness_loss = self.objectness_loss(
@@ -313,6 +320,7 @@ class VoteHead(nn.Module):
             bbox_preds['sem_scores'].transpose(2, 1),
             mask_targets,
             weight=box_loss_weights)
+        # print('semantic_loss,', semantic_loss.shape)
 
         losses = dict(
             vote_loss=vote_loss,
@@ -337,6 +345,36 @@ class VoteHead(nn.Module):
 
         if ret_target:
             losses['targets'] = targets
+
+        if ret_metrics:
+            semantic_acc = bbox_preds['sem_scores'].max(2)[1] == \
+                mask_targets
+            semantic_acc = semantic_acc.float().sum() / \
+                box_loss_weights.float().sum()
+            losses['semantic_acc'] = semantic_acc
+            s2t_dis, t2s_dis = ChamferDistance(reduction='none')(
+                bbox_preds['center'],
+                center_targets,
+                src_weight=box_loss_weights,
+                dst_weight=valid_gt_weights)
+            # print(box_loss_weights.shape, s2t_dis.shape)
+            # print(valid_gt_weights.shape, t2s_dis.shape)
+            s2t_dis = torch.sqrt(
+                s2t_dis).sum() / box_loss_weights.float().sum()
+            t2s_dis = torch.sqrt(
+                t2s_dis).sum() / valid_gt_weights.float().sum()
+            losses['s2t_dis'] = s2t_dis
+            losses['t2s_dis'] = t2s_dis
+            losses['vote_dist'] = vote_dist.sum() / seed_gt_votes_mask.sum()
+            thresh = [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1000.0]
+            for i in range(len(thresh) - 1):
+                small_mask = (vote_dist > thresh[i]).float()
+                big_mask = (vote_dist < thresh[i + 1]).float()
+                losses['vote_ratio_%.2f-%.2f' % (thresh[i], thresh[i+1])] = \
+                    (small_mask * big_mask).sum() / seed_gt_votes_mask.sum()
+
+            # print(vote_dist)
+        # assert False
 
         return losses
 

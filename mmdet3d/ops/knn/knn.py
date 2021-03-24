@@ -43,14 +43,13 @@ class KNN(Function):
         assert center_xyz.is_contiguous()
         assert xyz.is_contiguous()
 
-        idx = torch.cuda.LongTensor(B, k, npoint).zero_()
+        idx = center_xyz.new_zeros((B, k, npoint)).long()
 
         for bi in range(B):
             knn_ext.knn_wrapper(xyz[bi], N, center_xyz[bi], npoint, idx[bi], k)
 
-        ctx.mark_non_differentiable(idx)
-
         idx -= 1
+        ctx.mark_non_differentiable(idx)
 
         return idx
 
