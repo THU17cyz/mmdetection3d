@@ -222,7 +222,8 @@ class VoteHead(nn.Module):
              img_metas=None,
              gt_bboxes_ignore=None,
              ret_target=False,
-             ret_metrics=True):
+             ret_metrics=True,
+             only_vote=True):
         """Compute loss.
 
         Args:
@@ -261,8 +262,9 @@ class VoteHead(nn.Module):
             vote_targets,
             ret_metrics=ret_metrics)
         if ret_metrics:
-            vote_loss, vote_dist, seed_gt_votes_mask = vote_loss[0], vote_loss[
-                1], vote_loss[2]
+            vote_loss, vote_dist, vote_rel_dist, \
+                seed_gt_votes_mask = vote_loss[0], \
+                vote_loss[1], vote_loss[2], vote_loss[3]
 
         # calculate objectness loss
         objectness_loss = self.objectness_loss(
@@ -322,15 +324,18 @@ class VoteHead(nn.Module):
             weight=box_loss_weights)
         # print('semantic_loss,', semantic_loss.shape)
 
-        losses = dict(
-            vote_loss=vote_loss,
-            objectness_loss=objectness_loss,
-            semantic_loss=semantic_loss,
-            center_loss=center_loss,
-            dir_class_loss=dir_class_loss,
-            dir_res_loss=dir_res_loss,
-            size_class_loss=size_class_loss,
-            size_res_loss=size_res_loss)
+        if only_vote:
+            losses = dict(vote_loss=vote_loss)
+        else:
+            losses = dict(
+                vote_loss=vote_loss,
+                objectness_loss=objectness_loss,
+                semantic_loss=semantic_loss,
+                center_loss=center_loss,
+                dir_class_loss=dir_class_loss,
+                dir_res_loss=dir_res_loss,
+                size_class_loss=size_class_loss,
+                size_res_loss=size_res_loss)
 
         if self.iou_loss:
             corners_pred = self.bbox_coder.decode_corners(
@@ -366,6 +371,9 @@ class VoteHead(nn.Module):
             losses['s2t_dis'] = s2t_dis
             losses['t2s_dis'] = t2s_dis
             losses['vote_dist'] = vote_dist.sum() / seed_gt_votes_mask.sum()
+            losses['vote_rel_dist'] = vote_rel_dist.sum(
+            ) / seed_gt_votes_mask.sum()
+            print(losses['vote_rel_dist'])
             thresh = [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1000.0]
             for i in range(len(thresh) - 1):
                 small_mask = (vote_dist > thresh[i]).float()

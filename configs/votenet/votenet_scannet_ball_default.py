@@ -85,5 +85,7 @@ val_pipeline = [
 
 workflow = [('train', 1), ('val', 1)]
 
+find_unused_parameters = True
+
 # data = dict(samples_per_gpu=8, val=dict(test_mode=False))
 # load_from = 'https://download.openmmlab.com/mmdetection3d/v0.1.0_models/votenet/votenet_8x8_scannet-3d-18class/votenet_8x8_scannet-3d-18class_20200620_230238-2cea9c3a.pth'  # noqa

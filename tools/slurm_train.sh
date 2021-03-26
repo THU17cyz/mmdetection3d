@@ -12,8 +12,8 @@ CPUS_PER_TASK=${CPUS_PER_TASK:-5}
 SRUN_ARGS=${SRUN_ARGS:-""}
 PY_ARGS=${@:5}
 
-PYTHONPATH="$(dirname $0)/..":$PYTHONPATH \
 mkdir -p $4
+PYTHONPATH="$(dirname $0)/..":$PYTHONPATH \
 srun -p ${PARTITION} \
     --job-name=${JOB_NAME} \
     --gres=gpu:${GPUS_PER_NODE} \
