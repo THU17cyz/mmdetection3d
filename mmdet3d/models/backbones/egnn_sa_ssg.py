@@ -139,6 +139,10 @@ class EGNNSASSG(BasePointNet):
             sa_xyz.append(cur_xyz)
             sa_xyz_shifted.append(cur_xyz_shifted.transpose(1, 2).contiguous())
             sa_features.append(cur_features)
+            # print(i, cur_features.min())
+            # print(i, cur_features.max())
+            # print(i, cur_xyz_shifted.transpose(1, 2).contiguous().min())
+            # print(i, cur_xyz_shifted.transpose(1, 2).contiguous().max())
             sa_indices.append(
                 torch.gather(sa_indices[-1], 1, cur_indices.long()))
 
@@ -157,7 +161,7 @@ class EGNNSASSG(BasePointNet):
         #     fp_xyz=fp_xyz, fp_features=fp_features, fp_indices=fp_indices)
 
         ret = dict(
-            # sa_xyz=sa_xyz,
+            sa_xyz=sa_xyz,
             sa_xyz_shifted=sa_xyz_shifted,
             # sa_features=sa_features,
             fp_xyz=fp_xyz,

@@ -147,13 +147,15 @@ class VoteModuleNew(nn.Module):
             vote_feats = seed_feats
         return vote_points, vote_feats, offset
 
-    def get_loss(self,
-                 seed_points,
-                 vote_points,
-                 seed_indices,
-                 vote_targets_mask,
-                 vote_targets,
-                 ret_metrics=False):
+    def get_loss(
+            self,
+            #  seed_points,
+            vote_points,
+            seed_points,
+            #  seed_indices,
+            vote_targets_mask,
+            vote_targets,
+            ret_metrics=False):
         """Calculate loss of voting module.
 
         Args:
@@ -166,15 +168,19 @@ class VoteModuleNew(nn.Module):
         Returns:
             torch.Tensor: Weighted vote loss.
         """
-        batch_size, num_seed = seed_points.shape[:2]
+        batch_size, num_seed = vote_points.shape[:2]
 
-        seed_gt_votes_mask = torch.gather(vote_targets_mask, 1,
-                                          seed_indices).float()
+        # seed_gt_votes_mask = torch.gather(vote_targets_mask, 1,
+        #                                   seed_indices).float()
 
-        seed_indices_expand = seed_indices.unsqueeze(-1).repeat(
-            1, 1, 3 * self.gt_per_seed)
-        seed_gt_votes = torch.gather(vote_targets, 1, seed_indices_expand)
-        seed_gt_votes += seed_points.repeat(1, 1, self.gt_per_seed)
+        # seed_indices_expand = seed_indices.unsqueeze(-1).repeat(
+        #     1, 1, 3 * self.gt_per_seed)
+        # seed_gt_votes = torch.gather(vote_targets, 1, seed_indices_expand)
+        # seed_gt_votes += seed_points.repeat(1, 1, self.gt_per_seed)
+        seed_gt_votes = seed_points.repeat(1, 1,
+                                           self.gt_per_seed) + vote_targets
+
+        seed_gt_votes_mask = vote_targets_mask
 
         weight = seed_gt_votes_mask / (torch.sum(seed_gt_votes_mask) + 1e-6)
         distance = self.vote_loss(

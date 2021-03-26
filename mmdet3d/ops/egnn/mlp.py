@@ -28,7 +28,7 @@ class MLP(nn.Module):
                         1,
                         padding=0,
                         conv_cfg=conv_cfg,
-                        norm_cfg=norm_cfg,
+                        norm_cfg=None,
                         act_cfg=None,
                         bias=True))
             else:

@@ -84,7 +84,9 @@ class EGNNLayer(nn.Module):
             edge_feat.reshape(batch_size, -1, n_query *
                               n_ref))  # batch_size, m_edge_dim, n_query, n_ref
 
-        x_res_weight = self.coord_mlp(m_edge).sum(1)
+        x_res_weight = self.coord_mlp(m_edge).mean(1)
+        # print('hello', x_res_weight.max(), x_res_weight.min())
+        # print('hello', x_diff.max(), x_diff.min())
         x_res_weight = x_res_weight.reshape(
             batch_size, -1, n_query, n_ref)  # batch_size, 1, n_query, n_ref
 
@@ -92,6 +94,8 @@ class EGNNLayer(nn.Module):
         #  m_edge_dim = m_edge.shape[1]
 
         x_res = x_res_weight * x_diff  # batch_size, 3, n_query, n_ref
+        if mask is not None:
+            x_res = x_res * mask.unsqueeze(1)
         x_update = x_query[..., 0] + x_res.sum(dim=3)  # batch_size, 3, n_query
 
         if self.gather_mode == 'sum':

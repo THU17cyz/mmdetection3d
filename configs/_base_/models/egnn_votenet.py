@@ -6,6 +6,7 @@ edge_mlp = dict(
     residual=False,
     act_cfg=dict(type='Swish'),
     conv_cfg=dict(type='Conv1d'),
+    # norm_cfg=dict(type='BN1d'))
     norm_cfg=dict(type='GN', num_groups=2))
 
 coord_mlp = dict(
@@ -13,13 +14,15 @@ coord_mlp = dict(
     residual=False,
     act_cfg=dict(type='Swish'),
     conv_cfg=dict(type='Conv1d'),
+    # norm_cfg=dict(type='BN1d'))
     norm_cfg=dict(type='GN', num_groups=2))
 
 node_mlp = dict(
-    last_act=False,
+    last_act=True,
     residual=False,
     act_cfg=dict(type='Swish'),
     conv_cfg=dict(type='Conv1d'),
+    # norm_cfg=dict(type='BN1d'))
     norm_cfg=dict(type='GN', num_groups=2))
 
 mlp_dims = [[[5, 64, 64], [64, 64, 32], [66, 64, 128]],
@@ -33,7 +36,7 @@ model = dict(
         type='EGNNSASSG',
         in_channels=2,
         num_points=(2048, 1024, 512, 256),
-        radius=(0.0, 0.0, 0.0, 0.0),
+        radius=(0.2, 0.4, 0.8, 1.2),
         num_samples=(64, 32, 16, 16),
         egnn_layer_cfgs=(
             dict(
@@ -68,6 +71,7 @@ model = dict(
             #          (128, 128, 256)
         ),
         fp_channels=((256, 256), (256, 256)),
+        # fp_norm_cfg=dict(type='BN2d')),
         fp_norm_cfg=dict(type='GN', num_groups=2)),
     # backbone=dict(
     #     type='PointNet2SASSG',

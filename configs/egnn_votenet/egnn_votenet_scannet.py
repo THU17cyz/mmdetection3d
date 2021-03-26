@@ -86,4 +86,4 @@ val_pipeline = [
 
 workflow = [('train', 1), ('val', 1)]
 
-data = dict(samples_per_gpu=4)
+data = dict(samples_per_gpu=8)

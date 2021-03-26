@@ -173,6 +173,11 @@ class KNNAndGroup(nn.Module):
 
         # (B, 3, npoint, sample_num)
         grouped_xyz = grouping_operation(xyz_trans, idx)
+        # print(grouped_xyz.shape)
+        # print(self.subtract_center,
+        # (grouped_xyz.max(3)[0] - grouped_xyz.min(3)[0])[0])
+        # print(points_xyz.min(), points_xyz.max())
+        # assert False
         if self.subtract_center:
             grouped_xyz -= center_xyz_trans.unsqueeze(-1)
 

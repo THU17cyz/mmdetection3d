@@ -49,12 +49,14 @@ class EGNNVoteNet(SingleStage3DDetector):
         points_cat = torch.stack(points)
 
         x = self.extract_feat(points_cat)
-        bbox_preds, mlv_points = self.bbox_head(x, self.train_cfg.sample_mod)
+        bbox_preds, mlv_points_shifted, mlv_points_origin = \
+            self.bbox_head(x, self.train_cfg.sample_mod, return_points=True)
 
-        mlv_points = [[x] for x in points]
+        # mlv_points = [[x] for x in points]
 
-        loss_inputs = (mlv_points, gt_bboxes_3d, gt_labels_3d,
-                       pts_semantic_mask, pts_instance_mask, img_metas)
+        loss_inputs = (mlv_points_shifted, mlv_points_origin, gt_bboxes_3d,
+                       gt_labels_3d, pts_semantic_mask, pts_instance_mask,
+                       img_metas)
         # bbox_preds = self.bbox_head(x, self.train_cfg.sample_mod)
         # loss_inputs = (points, gt_bboxes_3d, gt_labels_3d, pts_semantic_mask,
         #                pts_instance_mask, img_metas)

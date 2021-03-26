@@ -6,8 +6,8 @@ from torch.nn import functional as F
 
 from mmdet3d.core.post_processing import aligned_3d_nms
 from mmdet3d.models.builder import build_loss
-from mmdet3d.models.losses import chamfer_distance
-from mmdet3d.models.model_utils import VoteModule
+from mmdet3d.models.losses import ChamferDistance, chamfer_distance
+from mmdet3d.models.model_utils import VoteModuleNew
 from mmdet3d.ops import build_sa_module, furthest_point_sample
 from mmdet.core import build_bbox_coder, multi_apply
 from mmdet.models import HEADS
@@ -24,7 +24,7 @@ class EGNNVoteHead(nn.Module):
             decoding boxes.
         train_cfg (dict): Config for training.
         test_cfg (dict): Config for testing.
-        vote_module_cfg (dict): Config of VoteModule for point-wise votes.
+        vote_module_cfg (dict): Config of VoteModuleNew for point-wise votes.
         vote_aggregation_cfg (dict): Config of vote aggregation layer.
         pred_layer_cfg (dict): Config of classfication and regression
             prediction layers.
@@ -83,7 +83,7 @@ class EGNNVoteHead(nn.Module):
         self.num_sizes = self.bbox_coder.num_sizes
         self.num_dir_bins = self.bbox_coder.num_dir_bins
 
-        self.vote_module = VoteModule(**vote_module_cfg)
+        self.vote_module = VoteModuleNew(**vote_module_cfg)
         self.vote_aggregation = build_sa_module(vote_aggregation_cfg)
         self.fp16_enabled = False
 
@@ -127,6 +127,8 @@ class EGNNVoteHead(nn.Module):
         # seed_indices = feat_dict['fp_indices'][-1]
 
         shifted_points = feat_dict['sa_xyz_shifted']
+        origin_points = feat_dict['sa_xyz']
+
         seed_features = feat_dict['fp_features'][-1]
         # seed_indices = feat_dict['sa_indices'][-1]
 
@@ -134,9 +136,10 @@ class EGNNVoteHead(nn.Module):
 
         all_indices = feat_dict['fp_indices']
 
-        return seed_features, all_points, all_indices, shifted_points
+        return seed_features, all_points, all_indices, \
+            shifted_points, origin_points
 
-    def forward(self, feat_dict, sample_mod):
+    def forward(self, feat_dict, sample_mod, return_points=False):
         """Forward pass.
 
         Note:
@@ -157,11 +160,11 @@ class EGNNVoteHead(nn.Module):
         """
         assert sample_mod in ['vote', 'seed', 'random', 'spec']
 
-        seed_features, all_points, all_indices, shifted_points = \
-            self._extract_input(feat_dict)
+        seed_features, all_points, all_indices, shifted_points, \
+            origin_points = self._extract_input(feat_dict)
 
-        print(seed_features.min())
-        print(seed_features.max())
+        # print(seed_features.min())
+        # print(seed_features.max())
 
         seed_points = all_points[-1]
         seed_indices = all_indices[-1]
@@ -222,14 +225,14 @@ class EGNNVoteHead(nn.Module):
         results['aggregated_features'] = features
         results['aggregated_indices'] = aggregated_indices
 
-        print(features.min())
-        print(features.max())
+        # print(features.min())
+        # print(features.max())
 
         # 3. predict bbox and score
         cls_predictions, reg_predictions = self.conv_pred(features)
 
-        print(cls_predictions.min())
-        print(cls_predictions.max())
+        # print(cls_predictions.min())
+        # print(cls_predictions.max())
 
         # 4. decode predictions
         decode_res = self.bbox_coder.split_pred(cls_predictions,
@@ -244,22 +247,30 @@ class EGNNVoteHead(nn.Module):
 
         results.update(decode_res)
 
-        shifted_points = [[x[i] for x in shifted_points]
-                          for i in range(len(shifted_points[0]))]
+        if return_points:
 
-        return results, shifted_points
+            shifted_points = [[x[i] for x in shifted_points]
+                              for i in range(len(shifted_points[0]))]
+            origin_points = [[x[i] for x in origin_points]
+                             for i in range(len(origin_points[0]))]
+
+            return results, shifted_points, origin_points
+
+        return results
 
     @force_fp32(apply_to=('bbox_preds', ))
     def loss(self,
              bbox_preds,
-             mlv_points,
+             mlv_points_shifted,
+             mlv_points_origin,
              gt_bboxes_3d,
              gt_labels_3d,
              pts_semantic_mask=None,
              pts_instance_mask=None,
              img_metas=None,
              gt_bboxes_ignore=None,
-             ret_target=False):
+             ret_target=False,
+             ret_metrics=True):
         """Compute loss.
 
         Args:
@@ -280,24 +291,54 @@ class EGNNVoteHead(nn.Module):
         Returns:
             dict: Losses of Votenet.
         """
-        targets = self.get_targets(mlv_points, gt_bboxes_3d, gt_labels_3d,
-                                   pts_semantic_mask, pts_instance_mask,
-                                   bbox_preds)
+        targets = self.get_targets(mlv_points_origin, gt_bboxes_3d,
+                                   gt_labels_3d, pts_semantic_mask,
+                                   pts_instance_mask, bbox_preds)
         (mlv_vote_targets, mlv_vote_target_masks, size_class_targets,
          size_res_targets, dir_class_targets, dir_res_targets, center_targets,
          assigned_center_targets, mask_targets, valid_gt_masks,
          objectness_targets, objectness_weights, box_loss_weights,
          valid_gt_weights) = targets
 
-        for i, (vote_targets, vote_target_masks, points) in enumerate(
-                zip(mlv_vote_targets, mlv_vote_target_masks, mlv_points)):
+        mlv_points_shifted = [
+            torch.stack([
+                mlv_points_shifted[j][i]
+                for j in range(len(mlv_points_shifted))
+            ]) for i in range(len(mlv_points_shifted[0]))
+        ]
+
+        mlv_points_origin = [
+            torch.stack([
+                mlv_points_origin[j][i] for j in range(len(mlv_points_origin))
+            ]) for i in range(len(mlv_points_origin[0]))
+        ]
+
+        vote_losses = []
+        vote_dists = []
+        seed_gt_votes_masks = []
+
+        for i, (vote_targets, vote_target_masks, points_shifted,
+                points_origin) in enumerate(
+                    zip(mlv_vote_targets, mlv_vote_target_masks,
+                        mlv_points_shifted, mlv_points_origin)):
             pass
 
-        # calculate vote loss
-        vote_loss = self.vote_module.get_loss(bbox_preds['seed_points'],
-                                              bbox_preds['vote_points'],
-                                              bbox_preds['seed_indices'],
-                                              vote_target_masks, vote_targets)
+            # calculate vote loss
+            vote_loss = self.vote_module.get_loss(
+                points_shifted,
+                points_origin,
+                # bbox_preds['seed_points'],
+                # bbox_preds['vote_points'],
+                # bbox_preds['seed_indices'],
+                vote_target_masks,
+                vote_targets,
+                ret_metrics=ret_metrics)
+            if ret_metrics:
+                vote_loss, vote_dist, seed_gt_votes_mask = vote_loss[
+                    0], vote_loss[1], vote_loss[2]
+            vote_losses.append(vote_loss)
+            vote_dists.append(vote_dist)
+            seed_gt_votes_masks.append(seed_gt_votes_mask)
 
         # calculate objectness loss
         objectness_loss = self.objectness_loss(
@@ -350,12 +391,11 @@ class EGNNVoteHead(nn.Module):
             size_res_targets,
             weight=box_loss_weights_expand)
 
-        print(torch.isnan(mask_targets).any())
-        print(bbox_preds['sem_scores'])
-        print(torch.isnan(bbox_preds['sem_scores']).any())
-        print(bbox_preds['sem_scores'].min())
-        print(bbox_preds['sem_scores'].max())
-        print(torch.isnan(box_loss_weights).any())
+        # print(torch.isnan(mask_targets).any())
+        # print(torch.isnan(bbox_preds['sem_scores']).any())
+        # print(bbox_preds['sem_scores'].min())
+        # print(bbox_preds['sem_scores'].max())
+        # print(torch.isnan(box_loss_weights).any())
 
         # calculate semantic loss
         semantic_loss = self.semantic_loss(
@@ -364,7 +404,6 @@ class EGNNVoteHead(nn.Module):
             weight=box_loss_weights)
 
         losses = dict(
-            vote_loss=vote_loss,
             objectness_loss=objectness_loss,
             semantic_loss=semantic_loss,
             center_loss=center_loss,
@@ -372,6 +411,10 @@ class EGNNVoteHead(nn.Module):
             dir_res_loss=dir_res_loss,
             size_class_loss=size_class_loss,
             size_res_loss=size_res_loss)
+
+        for i, vote_loss in enumerate(vote_losses):
+            losses['vote_loss_layer_%d' % i] = vote_loss
+            # print(vote_loss)
 
         if self.iou_loss:
             corners_pred = self.bbox_coder.decode_corners(
@@ -387,10 +430,39 @@ class EGNNVoteHead(nn.Module):
         if ret_target:
             losses['targets'] = targets
 
-        for loss in losses:
-            print(loss)
-            print(losses[loss].dtype)
-            print(losses[loss].shape)
+        if ret_metrics:
+
+            semantic_acc = bbox_preds['sem_scores'].max(2)[1] == \
+                mask_targets
+            semantic_acc = (semantic_acc * box_loss_weights).float().sum() / \
+                (box_loss_weights.float().sum() + 1e-6)
+            # print(semantic_acc)
+            losses['semantic_acc'] = semantic_acc
+            s2t_dis, t2s_dis = ChamferDistance(reduction='none')(
+                bbox_preds['center'],
+                center_targets,
+                src_weight=box_loss_weights,
+                dst_weight=valid_gt_weights)
+            # print(box_loss_weights.shape, s2t_dis.shape)
+            # print(valid_gt_weights.shape, t2s_dis.shape)
+            s2t_dis = torch.sqrt(s2t_dis).sum() / (
+                box_loss_weights.float().sum() + 1e-6)
+            t2s_dis = torch.sqrt(t2s_dis).sum() / (
+                valid_gt_weights.float().sum() + 1e-6)
+            losses['s2t_dis'] = s2t_dis
+            losses['t2s_dis'] = t2s_dis
+            thresh = [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1000.0]
+            for j, (vote_dist, seed_gt_votes_mask) in enumerate(
+                    zip(vote_dists, seed_gt_votes_masks)):
+                losses['vote_dist_layer_%d' % j] = vote_dist.sum() / (
+                    seed_gt_votes_mask.sum() + 1e-6)
+                for i in range(len(thresh) - 1):
+                    small_mask = (vote_dist > thresh[i]).float()
+                    big_mask = (vote_dist < thresh[i + 1]).float()
+                    losses['vote_ratio_%.2f-%.2f_layer_%d' % (
+                        thresh[i], thresh[i+1], j)] = \
+                        (small_mask * big_mask).sum() / \
+                        (seed_gt_votes_mask.sum() + 1e-6)
 
         return losses
 
@@ -453,7 +525,6 @@ class EGNNVoteHead(nn.Module):
 
         # pad targets as original code of votenet.
         for index in range(len(gt_labels_3d)):
-            print(index, len(center_targets), len(mlv_vote_targets))
             pad_num = max_gt_num - gt_labels_3d[index].shape[0]
             center_targets[index] = F.pad(center_targets[index],
                                           (0, 0, 0, pad_num))
@@ -503,9 +574,8 @@ class EGNNVoteHead(nn.Module):
                                 pts_instance_mask=None):
 
         # generate votes target
-        print(points.shape)
         num_points = points.shape[0]
-        if self.bbox_coder.with_rot:
+        if True:  # self.bbox_coder.with_rot:
             vote_targets = points.new_zeros([num_points, 3 * self.gt_per_seed])
             vote_target_masks = points.new_zeros([num_points],
                                                  dtype=torch.long)

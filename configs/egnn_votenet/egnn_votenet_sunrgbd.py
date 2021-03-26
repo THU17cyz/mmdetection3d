@@ -43,16 +43,13 @@ val_pipeline = [
         shift_height=True,
         load_dim=6,
         use_dim=[0, 1, 2]),
+    dict(type='LoadAnnotations3D'),
     dict(
-        type='LoadAnnotations3D',
-        with_bbox_3d=True,
-        with_label_3d=True,
-        with_mask_3d=True,
-        with_seg_3d=True),
-    dict(
-        type='PointSegClassMapping',
-        valid_cat_ids=(3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 16, 24, 28, 33, 34,
-                       36, 39)),
+        type='LoadPointsFromFile',
+        coord_type='DEPTH',
+        shift_height=True,
+        load_dim=6,
+        use_dim=[0, 1, 2]),
     dict(
         type='GlobalRotScaleTrans',
         rot_range=[0, 0],
@@ -62,20 +59,14 @@ val_pipeline = [
         type='RandomFlip3D',
         sync_2d=False,
         flip_ratio_bev_horizontal=0.5,
-        flip_ratio_bev_vertical=0.5),
-    dict(type='IndoorPointSample', num_points=40000),
+    ),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
-    dict(
-        type='Collect3D',
-        keys=[
-            'points', 'gt_bboxes_3d', 'gt_labels_3d', 'pts_semantic_mask',
-            'pts_instance_mask'
-        ])
+    dict(type='Collect3D', keys=['points', 'gt_bboxes_3d', 'gt_labels_3d'])
 ]
 
 workflow = [('train', 1), ('val', 1)]
 
 data = dict(samples_per_gpu=8)
 find_unused_parameters = True
-lr = 0.001
+lr = 0.004
 optimizer = dict(type='AdamW', lr=lr, weight_decay=0.01)
