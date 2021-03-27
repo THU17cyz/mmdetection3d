@@ -177,7 +177,7 @@ class VoteModule(nn.Module):
         seed_gt_votes += seed_points.repeat(1, 1, self.gt_per_seed)
 
         weight = seed_gt_votes_mask / (torch.sum(seed_gt_votes_mask) + 1e-6)
-        print(seed_gt_votes.shape, vote_points.shape)
+        # print(seed_gt_votes.shape, vote_points.shape)
         distance = self.vote_loss(
             vote_points.view(batch_size * num_seed, -1, 3),
             seed_gt_votes.view(batch_size * num_seed, -1, 3),

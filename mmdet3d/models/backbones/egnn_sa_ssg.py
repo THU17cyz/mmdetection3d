@@ -2,7 +2,7 @@ import torch
 from mmcv.runner import auto_fp16
 from torch import nn as nn
 
-from mmdet3d.ops import PointEGNNModule, PointFPModule  # , build_sa_module
+from mmdet3d.ops import PointCoordsFPModule, PointEGNNModule, PointFPModule
 from mmdet.models import BACKBONES
 from .base_pointnet import BasePointNet
 
@@ -89,6 +89,7 @@ class EGNNSASSG(BasePointNet):
             sa_in_channel = sa_out_channel
 
         self.FP_modules = nn.ModuleList()
+        self.CoordsFP_Module = nn.ModuleList()
 
         fp_source_channel = skip_channel_list.pop()
         fp_target_channel = skip_channel_list.pop()
@@ -97,6 +98,7 @@ class EGNNSASSG(BasePointNet):
             cur_fp_mlps = [fp_source_channel + fp_target_channel] + cur_fp_mlps
             self.FP_modules.append(
                 PointFPModule(mlp_channels=cur_fp_mlps, norm_cfg=fp_norm_cfg))
+            self.CoordsFP_Module.append(PointCoordsFPModule())
             if fp_index != len(fp_channels) - 1:
                 fp_source_channel = cur_fp_mlps[-1]
                 fp_target_channel = skip_channel_list.pop()
@@ -147,6 +149,7 @@ class EGNNSASSG(BasePointNet):
                 torch.gather(sa_indices[-1], 1, cur_indices.long()))
 
         fp_xyz = [sa_xyz[-1]]
+        fp_xyz_shifted = [sa_xyz_shifted[-1].transpose(1, 2).contiguous()]
         fp_features = [sa_features[-1]]
         fp_indices = [sa_indices[-1]]
 
@@ -154,6 +157,9 @@ class EGNNSASSG(BasePointNet):
             fp_features.append(self.FP_modules[i](
                 sa_xyz[self.num_sa - i - 1], sa_xyz[self.num_sa - i],
                 sa_features[self.num_sa - i - 1], fp_features[-1]))
+            fp_xyz_shifted.append(self.CoordsFP_Module[i](
+                sa_xyz[self.num_sa - i - 1], sa_xyz[self.num_sa - i],
+                fp_xyz_shifted[-1]))
             fp_xyz.append(sa_xyz[self.num_sa - i - 1])
             fp_indices.append(sa_indices[self.num_sa - i - 1])
 
@@ -161,13 +167,13 @@ class EGNNSASSG(BasePointNet):
         #     fp_xyz=fp_xyz, fp_features=fp_features, fp_indices=fp_indices)
 
         ret = dict(
-            sa_xyz=sa_xyz,
-            sa_xyz_shifted=sa_xyz_shifted,
+            # sa_xyz=sa_xyz,
+            # sa_xyz_shifted=sa_xyz_shifted,
             # sa_features=sa_features,
+            fp_xyz_shifted=fp_xyz_shifted,
             fp_xyz=fp_xyz,
             fp_features=fp_features,
-            fp_indices=fp_indices,
-            sa_indices=sa_indices)
+            fp_indices=fp_indices)
         return ret
 
     def _split_point_feats(self, points):

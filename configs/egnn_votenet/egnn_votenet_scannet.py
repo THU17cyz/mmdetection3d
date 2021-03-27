@@ -38,7 +38,7 @@ log_config = dict(
     interval=30,
     hooks=[
         dict(type='TextLoggerHook'),
-        dict(type='TensorboardLoggerHook')
+        dict(type='TensorboardHistogramLoggerHook')
     ])
 # yapf:enable
 
@@ -87,3 +87,7 @@ val_pipeline = [
 workflow = [('train', 1), ('val', 1)]
 
 data = dict(samples_per_gpu=8)
+
+find_unused_parameters = True
+
+custom_imports = dict(imports=['mmdet3d.hooks.custom_hook'])

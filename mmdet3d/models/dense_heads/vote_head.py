@@ -354,9 +354,9 @@ class VoteHead(nn.Module):
         if ret_metrics:
             semantic_acc = bbox_preds['sem_scores'].max(2)[1] == \
                 mask_targets
-            semantic_acc = semantic_acc.float().sum() / \
-                box_loss_weights.float().sum()
-            losses['semantic_acc'] = semantic_acc
+            semantic_acc = (semantic_acc * box_loss_weights).float().sum() / \
+                (box_loss_weights.float().sum() + 1e-6)
+            losses['__semantic_acc'] = semantic_acc
             s2t_dis, t2s_dis = ChamferDistance(reduction='none')(
                 bbox_preds['center'],
                 center_targets,
@@ -364,25 +364,33 @@ class VoteHead(nn.Module):
                 dst_weight=valid_gt_weights)
             # print(box_loss_weights.shape, s2t_dis.shape)
             # print(valid_gt_weights.shape, t2s_dis.shape)
-            s2t_dis = torch.sqrt(
-                s2t_dis).sum() / box_loss_weights.float().sum()
-            t2s_dis = torch.sqrt(
-                t2s_dis).sum() / valid_gt_weights.float().sum()
-            losses['s2t_dis'] = s2t_dis
-            losses['t2s_dis'] = t2s_dis
-            losses['vote_dist'] = vote_dist.sum() / seed_gt_votes_mask.sum()
-            losses['vote_rel_dist'] = vote_rel_dist.sum(
-            ) / seed_gt_votes_mask.sum()
-            print(losses['vote_rel_dist'])
-            thresh = [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1000.0]
+            s2t_dis = torch.sqrt(s2t_dis).sum() / (
+                box_loss_weights.float().sum() + 1e-6)
+            t2s_dis = torch.sqrt(t2s_dis).sum() / (
+                valid_gt_weights.float().sum() + 1e-6)
+            losses['__s2t_dis'] = s2t_dis
+            losses['__t2s_dis'] = t2s_dis
+            losses['__vote_dist'] = vote_dist.sum() / \
+                (seed_gt_votes_mask.sum() + 1e-6)
+            losses['__vote_rel_dist'] = vote_rel_dist.sum() / \
+                (seed_gt_votes_mask.sum() + 1e-6)
+            # print(losses['vote_rel_dist'])
+            # thresh = [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1000.0]
+            thresh = np.arange(0, 1.0, 0.05)
             for i in range(len(thresh) - 1):
                 small_mask = (vote_dist > thresh[i]).float()
                 big_mask = (vote_dist < thresh[i + 1]).float()
-                losses['vote_ratio_%.2f-%.2f' % (thresh[i], thresh[i+1])] = \
-                    (small_mask * big_mask).sum() / seed_gt_votes_mask.sum()
+                ratio = (small_mask * big_mask).sum() / \
+                    (seed_gt_votes_mask.sum() + 1e-6)
+                losses['_vote_ratio_%.2f-%.2f' %
+                       (thresh[i], thresh[i + 1])] = ratio
 
-            # print(vote_dist)
-        # assert False
+                small_mask = (vote_rel_dist > thresh[i]).float()
+                big_mask = (vote_rel_dist < thresh[i + 1]).float()
+                rel_ratio = (small_mask * big_mask).sum() / \
+                    (seed_gt_votes_mask.sum() + 1e-6)
+                losses['_vote_rel_ratio_%.2f-%.2f' %
+                       (thresh[i], thresh[i + 1])] = rel_ratio
 
         return losses
 

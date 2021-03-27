@@ -126,18 +126,25 @@ class EGNNVoteHead(nn.Module):
         # seed_features = feat_dict['fp_features'][-1]
         # seed_indices = feat_dict['fp_indices'][-1]
 
-        shifted_points = feat_dict['sa_xyz_shifted']
-        origin_points = feat_dict['sa_xyz']
+        # shifted_points = feat_dict['sa_xyz_shifted']
+        # origin_points = feat_dict['sa_xyz']
 
         seed_features = feat_dict['fp_features'][-1]
         # seed_indices = feat_dict['sa_indices'][-1]
 
-        all_points = feat_dict['fp_xyz']
+        seed_points = feat_dict['fp_xyz_shifted'][-1]
 
-        all_indices = feat_dict['fp_indices']
+        if seed_points.shape[1] == 3:
+            seed_points = seed_points.transpose(1, 2).contiguous()
 
-        return seed_features, all_points, all_indices, \
-            shifted_points, origin_points
+        seed_points_origin = feat_dict['fp_xyz'][-1]
+
+        seed_indices = feat_dict['fp_indices'][-1]
+
+        return seed_points, seed_points_origin, seed_features, seed_indices
+
+        # return seed_features, all_points, all_indices, \
+        #     shifted_points, origin_points
 
     def forward(self, feat_dict, sample_mod, return_points=False):
         """Forward pass.
@@ -160,20 +167,20 @@ class EGNNVoteHead(nn.Module):
         """
         assert sample_mod in ['vote', 'seed', 'random', 'spec']
 
-        seed_features, all_points, all_indices, shifted_points, \
-            origin_points = self._extract_input(feat_dict)
+        seed_points, seed_points_origin, seed_features, seed_indices = \
+            self._extract_input(feat_dict)
 
         # print(seed_features.min())
         # print(seed_features.max())
 
-        seed_points = all_points[-1]
-        seed_indices = all_indices[-1]
+        # seed_points = all_points[-1]
+        # seed_indices = all_indices[-1]
 
-        results = dict(
-            seed_points=seed_points,
-            seed_indices=seed_indices,
-            all_points=all_points,
-            all_indices=all_indices)
+        # results = dict(
+        #     seed_points=seed_points,
+        #     seed_indices=seed_indices,
+        #     all_points=all_points,
+        #     all_indices=all_indices)
 
         # 1. generate vote_points from seed_points
         vote_points, vote_features, vote_offset = self.vote_module(
@@ -248,7 +255,8 @@ class EGNNVoteHead(nn.Module):
         results.update(decode_res)
 
         if return_points:
-
+            shifted_points = [seed_points]
+            origin_points = [seed_points_origin]
             shifted_points = [[x[i] for x in shifted_points]
                               for i in range(len(shifted_points[0]))]
             origin_points = [[x[i] for x in origin_points]
@@ -270,7 +278,8 @@ class EGNNVoteHead(nn.Module):
              img_metas=None,
              gt_bboxes_ignore=None,
              ret_target=False,
-             ret_metrics=True):
+             ret_metrics=True,
+             only_vote=True):
         """Compute loss.
 
         Args:
@@ -322,7 +331,8 @@ class EGNNVoteHead(nn.Module):
                     zip(mlv_vote_targets, mlv_vote_target_masks,
                         mlv_points_shifted, mlv_points_origin)):
             pass
-
+            # print(points_shifted.shape, points_origin.shape,
+            # vote_target_masks.shape)
             # calculate vote loss
             vote_loss = self.vote_module.get_loss(
                 points_shifted,
@@ -334,8 +344,8 @@ class EGNNVoteHead(nn.Module):
                 vote_targets,
                 ret_metrics=ret_metrics)
             if ret_metrics:
-                vote_loss, vote_dist, seed_gt_votes_mask = vote_loss[
-                    0], vote_loss[1], vote_loss[2]
+                vote_loss, vote_dist, vote_rel_dist, seed_gt_votes_mask = \
+                    vote_loss[0], vote_loss[1], vote_loss[2], vote_loss[3]
             vote_losses.append(vote_loss)
             vote_dists.append(vote_dist)
             seed_gt_votes_masks.append(seed_gt_votes_mask)
@@ -403,18 +413,21 @@ class EGNNVoteHead(nn.Module):
             mask_targets,
             weight=box_loss_weights)
 
-        losses = dict(
-            objectness_loss=objectness_loss,
-            semantic_loss=semantic_loss,
-            center_loss=center_loss,
-            dir_class_loss=dir_class_loss,
-            dir_res_loss=dir_res_loss,
-            size_class_loss=size_class_loss,
-            size_res_loss=size_res_loss)
-
-        for i, vote_loss in enumerate(vote_losses):
-            losses['vote_loss_layer_%d' % i] = vote_loss
-            # print(vote_loss)
+        if only_vote:
+            losses = dict()
+            for i, vote_loss in enumerate(vote_losses):
+                losses['vote_loss_layer_%d' % i] = vote_loss
+        else:
+            losses = dict(
+                objectness_loss=objectness_loss,
+                semantic_loss=semantic_loss,
+                center_loss=center_loss,
+                dir_class_loss=dir_class_loss,
+                dir_res_loss=dir_res_loss,
+                size_class_loss=size_class_loss,
+                size_res_loss=size_res_loss)
+            for i, vote_loss in enumerate(vote_losses):
+                losses['vote_loss_layer_%d' % i] = vote_loss
 
         if self.iou_loss:
             corners_pred = self.bbox_coder.decode_corners(
@@ -431,13 +444,14 @@ class EGNNVoteHead(nn.Module):
             losses['targets'] = targets
 
         if ret_metrics:
+            vote_dist = vote_dists[0]
+            seed_gt_votes_mask = seed_gt_votes_masks[0]
 
             semantic_acc = bbox_preds['sem_scores'].max(2)[1] == \
                 mask_targets
             semantic_acc = (semantic_acc * box_loss_weights).float().sum() / \
                 (box_loss_weights.float().sum() + 1e-6)
-            # print(semantic_acc)
-            losses['semantic_acc'] = semantic_acc
+            losses['__semantic_acc'] = semantic_acc
             s2t_dis, t2s_dis = ChamferDistance(reduction='none')(
                 bbox_preds['center'],
                 center_targets,
@@ -449,20 +463,29 @@ class EGNNVoteHead(nn.Module):
                 box_loss_weights.float().sum() + 1e-6)
             t2s_dis = torch.sqrt(t2s_dis).sum() / (
                 valid_gt_weights.float().sum() + 1e-6)
-            losses['s2t_dis'] = s2t_dis
-            losses['t2s_dis'] = t2s_dis
-            thresh = [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1000.0]
-            for j, (vote_dist, seed_gt_votes_mask) in enumerate(
-                    zip(vote_dists, seed_gt_votes_masks)):
-                losses['vote_dist_layer_%d' % j] = vote_dist.sum() / (
-                    seed_gt_votes_mask.sum() + 1e-6)
-                for i in range(len(thresh) - 1):
-                    small_mask = (vote_dist > thresh[i]).float()
-                    big_mask = (vote_dist < thresh[i + 1]).float()
-                    losses['vote_ratio_%.2f-%.2f_layer_%d' % (
-                        thresh[i], thresh[i+1], j)] = \
-                        (small_mask * big_mask).sum() / \
-                        (seed_gt_votes_mask.sum() + 1e-6)
+            losses['__s2t_dis'] = s2t_dis
+            losses['__t2s_dis'] = t2s_dis
+            losses['__vote_dist'] = vote_dist.sum() / \
+                (seed_gt_votes_mask.sum() + 1e-6)
+            losses['__vote_rel_dist'] = vote_rel_dist.sum() / \
+                (seed_gt_votes_mask.sum() + 1e-6)
+            # print(losses['vote_rel_dist'])
+            # thresh = [0.0, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 1000.0]
+            thresh = np.arange(0, 1.0, 0.05)
+            for i in range(len(thresh) - 1):
+                small_mask = (vote_dist > thresh[i]).float()
+                big_mask = (vote_dist < thresh[i + 1]).float()
+                ratio = (small_mask * big_mask).sum() / \
+                    (seed_gt_votes_mask.sum() + 1e-6)
+                losses['_vote_ratio_%.2f-%.2f' %
+                       (thresh[i], thresh[i + 1])] = ratio
+
+                small_mask = (vote_rel_dist > thresh[i]).float()
+                big_mask = (vote_rel_dist < thresh[i + 1]).float()
+                rel_ratio = (small_mask * big_mask).sum() / \
+                    (seed_gt_votes_mask.sum() + 1e-6)
+                losses['_vote_rel_ratio_%.2f-%.2f' %
+                       (thresh[i], thresh[i + 1])] = rel_ratio
 
         return losses
 

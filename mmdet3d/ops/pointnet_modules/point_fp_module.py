@@ -75,3 +75,45 @@ class PointFPModule(nn.Module):
         new_features = self.mlps(new_features)
 
         return new_features.squeeze(-1)
+
+
+class PointCoordsFPModule(nn.Module):
+    """Point feature propagation module used in PointNets.
+
+    Propagate the features from one set to another.
+
+    Args:
+        mlp_channels (list[int]): List of mlp channels.
+        norm_cfg (dict): Type of normalization method.
+            Default: dict(type='BN2d').
+    """
+
+    def __init__(self):
+        super().__init__()
+
+    @force_fp32()
+    def forward(self, target: torch.Tensor, source: torch.Tensor,
+                source_coords: torch.Tensor) -> torch.Tensor:
+        """forward.
+
+        Args:
+            target (Tensor): (B, n, 3) tensor of the xyz positions of
+                the target features.
+            source (Tensor): (B, m, 3) tensor of the xyz positions of
+                the source features.
+            target_feats (Tensor): (B, C1, n) tensor of the features to be
+                propagated to.
+            source_feats (Tensor): (B, C2, m) tensor of features
+                to be propagated.
+
+        Return:
+            Tensor: (B, M, N) M = mlp[-1], tensor of the target features.
+        """
+        dist, idx = three_nn(target, source)
+        dist_reciprocal = 1.0 / (dist + 1e-8)
+        norm = torch.sum(dist_reciprocal, dim=2, keepdim=True)
+        weight = dist_reciprocal / norm
+
+        interpolated_coords = three_interpolate(source_coords, idx, weight)
+
+        return interpolated_coords

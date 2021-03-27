@@ -12,7 +12,8 @@ from .group_points import (GroupAll, KNNAndGroup, QueryAndGroup, group_points,
 from .interpolate import three_interpolate, three_nn
 from .knn import knn
 from .norm import NaiveSyncBatchNorm1d, NaiveSyncBatchNorm2d
-from .pointnet_modules import (PointFPModule, PointSAModule, PointSAModuleMSG,
+from .pointnet_modules import (PointCoordsFPModule, PointFPModule,
+                               PointSAModule, PointSAModuleMSG,
                                build_sa_module)
 from .roiaware_pool3d import (RoIAwarePool3d, points_in_boxes_batch,
                               points_in_boxes_cpu, points_in_boxes_gpu)
@@ -33,5 +34,5 @@ __all__ = [
     'QueryAndGroup', 'KNNAndGroup', 'PointSAModule', 'PointSAModuleMSG',
     'PointFPModule', 'points_in_boxes_batch', 'get_compiler_version',
     'get_compiling_cuda_version', 'Points_Sampler', 'build_sa_module',
-    'PointEGNNModule', 'PointEGNNModuleMSG', 'EGNNLayer'
+    'PointEGNNModule', 'PointEGNNModuleMSG', 'EGNNLayer', 'PointCoordsFPModule'
 ]

@@ -194,8 +194,15 @@ class VoteModuleNew(nn.Module):
                 seed_gt_votes.view(batch_size * num_seed, -1, 3),
                 dst_weight=seed_gt_votes_mask.view(batch_size * num_seed,
                                                    1))[1]
-            distance_l2 = torch.sqrt(torch.min(distance_l2, dim=1)[0])
+            distance_l2, inds = torch.min(distance_l2, dim=1)
+            distance_l2 = torch.sqrt(distance_l2)
+            seed_gt_votes_min = seed_gt_votes.view(
+                batch_size * num_seed, -1, 3).norm(
+                    p=2, dim=-1).gather(
+                        dim=1, index=inds.unsqueeze(1))
 
-            return (vote_loss, distance_l2, seed_gt_votes_mask)
+            rel_dis_l2 = distance_l2 / seed_gt_votes_min.squeeze(-1)
+
+            return (vote_loss, distance_l2, rel_dis_l2, seed_gt_votes_mask)
 
         return vote_loss

@@ -37,7 +37,7 @@ log_config = dict(
     interval=30,
     hooks=[
         dict(type='TextLoggerHook'),
-        dict(type='TensorboardLoggerHook')
+        dict(type='TensorboardHistogramLoggerHook')
     ])
 # yapf:enable
 
@@ -89,3 +89,5 @@ find_unused_parameters = True
 
 # data = dict(samples_per_gpu=8, val=dict(test_mode=False))
 # load_from = 'https://download.openmmlab.com/mmdetection3d/v0.1.0_models/votenet/votenet_8x8_scannet-3d-18class/votenet_8x8_scannet-3d-18class_20200620_230238-2cea9c3a.pth'  # noqa
+
+custom_imports = dict(imports=['mmdet3d.hooks.custom_hook'])
