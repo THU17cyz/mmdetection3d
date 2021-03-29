@@ -78,12 +78,14 @@ class TensorboardHistogramLoggerHook(TensorboardLoggerHook):
             hist = []
             for ratio, val in zip(ratios, vals):
                 hist.extend([val] * int(ratio * 10000))
-            self.writer.add_histogram('vote_ratio', torch.tensor(hist),
-                                      self.get_iter(runner))
+            if len(hist) > 0:
+                self.writer.add_histogram('vote_ratio', torch.tensor(hist),
+                                          self.get_iter(runner))
 
         if len(rel_ratios) > 0:
             hist = []
             for ratio, val in zip(rel_ratios, rel_vals):
                 hist.extend([val] * int(ratio * 10000))
-            self.writer.add_histogram('vote_rel_ratio', torch.tensor(hist),
-                                      self.get_iter(runner))
+            if len(hist) > 0:
+                self.writer.add_histogram('vote_rel_ratio', torch.tensor(hist),
+                                          self.get_iter(runner))

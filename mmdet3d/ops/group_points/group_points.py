@@ -55,7 +55,11 @@ class QueryAndGroup(nn.Module):
             assert self.uniform_sample
         self.return_mask = return_mask
 
-    def forward(self, points_xyz, center_xyz, features=None):
+    def forward(self,
+                points_xyz,
+                center_xyz,
+                features=None,
+                xyz_to_update=None):
         """forward.
 
         Args:
@@ -88,7 +92,10 @@ class QueryAndGroup(nn.Module):
             mask[idx == idx_first] = 0
             mask[:, :, 0:1] = 1
 
-        xyz_trans = points_xyz.transpose(1, 2).contiguous()
+        if xyz_to_update is None:
+            xyz_trans = points_xyz.transpose(1, 2).contiguous()
+        else:
+            xyz_trans = xyz_to_update.transpose(1, 2).contiguous()
         # (B, 3, npoint, sample_num)
         grouped_xyz = grouping_operation(xyz_trans, idx)
         if self.subtract_center:
@@ -155,7 +162,11 @@ class KNNAndGroup(nn.Module):
         self.return_grouped_xyz = return_grouped_xyz
         self.subtract_center = subtract_center
 
-    def forward(self, points_xyz, center_xyz, features=None):
+    def forward(self,
+                points_xyz,
+                center_xyz,
+                features=None,
+                xyz_to_update=None):
         """forward.
 
         Args:
@@ -166,10 +177,14 @@ class KNNAndGroup(nn.Module):
         Return：
             Tensor: (B, 3 + C, npoint, sample_num) Grouped feature.
         """
+
         xyz_trans = points_xyz.transpose(1, 2).contiguous()
         center_xyz_trans = center_xyz.transpose(1, 2).contiguous()
         idx = knn(self.k, xyz_trans, center_xyz_trans, True)  # B, k, npoint
         idx = idx.transpose(1, 2).contiguous().int()
+
+        if xyz_to_update is not None:
+            xyz_trans = xyz_to_update.transpose(1, 2).contiguous()
 
         # (B, 3, npoint, sample_num)
         grouped_xyz = grouping_operation(xyz_trans, idx)

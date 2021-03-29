@@ -124,6 +124,7 @@ class PointEGNNModuleMSG(nn.Module):
         features: torch.Tensor = None,
         indices: torch.Tensor = None,
         target_xyz: torch.Tensor = None,
+        xyz_to_update: torch.Tensor = None
     ) -> (torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor):
         """forward.
 
@@ -143,6 +144,7 @@ class PointEGNNModuleMSG(nn.Module):
             Tensor: (B, M) where M is the number of points.
                 Index of the features.
         """
+
         new_features_list = []
         new_xyz_shifted_list = []
         xyz_flipped = points_xyz.transpose(1, 2).contiguous()
@@ -164,13 +166,18 @@ class PointEGNNModuleMSG(nn.Module):
         for i in range(len(self.groupers)):
             # (B, C, num_point, nsample)
             if self.group_mode == 'knn':
-                new_features, new_xyz = self.groupers[i](points_xyz,
-                                                         dsamp_xyz_t, features)
+                new_features, new_xyz = self.groupers[i](
+                    points_xyz,
+                    dsamp_xyz_t,
+                    features,
+                    xyz_to_update=xyz_to_update)
                 mask = None
             else:
-                new_features, new_xyz, mask = self.groupers[i](points_xyz,
-                                                               dsamp_xyz_t,
-                                                               features)
+                new_features, new_xyz, mask = self.groupers[i](
+                    points_xyz,
+                    dsamp_xyz_t,
+                    features,
+                    xyz_to_update=xyz_to_update)
 
             # (B, mlp[-1], num_point)
             new_xyz_shifted, new_features = self.egnn_layers[i](

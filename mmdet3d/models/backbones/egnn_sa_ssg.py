@@ -137,7 +137,8 @@ class EGNNSASSG(BasePointNet):
 
         for i in range(self.num_sa):
             cur_xyz, cur_xyz_shifted, cur_features, cur_indices = \
-                self.SA_modules[i](sa_xyz_shifted[i], sa_features[i])
+                self.SA_modules[i](sa_xyz[i], sa_features[i],
+                                   xyz_to_update=sa_xyz_shifted[i])
             sa_xyz.append(cur_xyz)
             sa_xyz_shifted.append(cur_xyz_shifted.transpose(1, 2).contiguous())
             sa_features.append(cur_features)
@@ -167,8 +168,8 @@ class EGNNSASSG(BasePointNet):
         #     fp_xyz=fp_xyz, fp_features=fp_features, fp_indices=fp_indices)
 
         ret = dict(
-            # sa_xyz=sa_xyz,
-            # sa_xyz_shifted=sa_xyz_shifted,
+            sa_xyz=sa_xyz[1:],
+            sa_xyz_shifted=sa_xyz_shifted[1:],
             # sa_features=sa_features,
             fp_xyz_shifted=fp_xyz_shifted,
             fp_xyz=fp_xyz,
